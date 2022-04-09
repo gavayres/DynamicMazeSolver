@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from torch.nn import Sequential, Conv2d, Flatten, Linear, SmoothL1Loss
+from torch.nn import Sequential, Conv2d, Flatten, Linear, SmoothL1Loss, ReLU
 from torch.optim import Adam 
 
 device = torch.device('cpu')
@@ -15,9 +15,9 @@ def q_function():
     pass
 
 class DQNAgent:
-    def __init__(self, state_size, discount, learning_rate) -> None:
-        self.q_fn = self._q_fn(state_size, 1).to(device)
-        self.target_q_fn = self._q_fn(state_size, 1)
+    def __init__(self, state_size, num_actions, discount, learning_rate) -> None:
+        self.q_fn = self._q_fn(state_size, num_actions).to(device).double()
+        self.target_q_fn = self._q_fn(state_size, 1).to(device).double()
         self.discount = discount
         self.lr = learning_rate
         self.loss = SmoothL1Loss()
@@ -30,9 +30,13 @@ class DQNAgent:
         """
         net = Sequential(
             Conv2d(2, 1,
-            kernel_size=3),
-            Flatten(),
-            Linear(3, output_size)
+            kernel_size=3,
+            padding=0),
+            ReLU(),
+            #Flatten(),
+            Linear(1, output_size),
+            #ReLU(),
+            #Linear(output_size, 1)
         )
         return net
 
@@ -42,8 +46,8 @@ class DQNAgent:
 
     def train(self, state_t, target):
         # Compute Huber loss
-        loss = self.loss(state_t, target.unsqueeze(1))
-
+        pred_reward = self.q_fn(state_t.double())
+        loss = self.loss(pred_reward, target)
         # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()
@@ -54,18 +58,19 @@ class DQNAgent:
 
     def replay(self, batch):
         #TODO: Epsilon decay
-        for state_t, action, state_tp1, reward, done in batch:
-            target = self.q_fn(state_t)
+        for state_t, action_idx, state_tp1, reward, done in batch:
+            target = self.q_fn(state_t.double())
             if done:
-                target[action] = reward 
+                target[:,:, action_idx] = reward 
             else: 
-                target_p1 = self.target_q_fn(state_tp1)
-                target[action] = reward + self.discount * np.argmax(target_p1)
+                target_tp1 = self.target_q_fn(state_tp1.double())
+                target[:,:, action_idx] = reward + self.discount * torch.argmax(target_tp1).item()
             # train network 
             #self.q_fn.fit(state_t, target, epochs=1, verbose=0)
             self.train(state_t, target)
 
+
     def act(self, state):
         q_vals = self.q_fn(state)
-        return np.argmax(q_vals)
+        return torch.argmax(q_vals).item()
 
