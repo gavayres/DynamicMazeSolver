@@ -6,6 +6,7 @@ class Env:
         self.y = 1
         self.time = 0
         self.state = self._get_state()
+        self.actions = ['up', 'down', 'left', 'right', 'stay']
 
     def update(self, action):
         """
@@ -43,25 +44,25 @@ class Env:
 
     def _check_valid_action(self, action):
         rel_x, rel_y = 1, 1 # relative position in state array
+        valid = True # account for action validity
         if action == "up":
-            self.check_state(rel_x, rel_y-1)
+            valid = self._check_state(rel_x, rel_y-1)
         elif action == "down":
-            self.check_state(rel_x, rel_y+1)
+            valid = self._check_state(rel_x, rel_y+1)
         elif action == "left":
-            self.check_state(rel_x-1, rel_y)
+            valid = self._check_state(rel_x-1, rel_y)
         elif action == "right":
-            self.check_state(rel_x+1, rel_y)
-        return action # this accounts for staying in same place also
+            valid = self._check_state(rel_x+1, rel_y)
+        return action if valid else "stay" 
 
     def _is_goal(self):
         return (self.x == 199) & (self.y == 199)
 
-    def check_state(self, rel_x, rel_y):
+    def _check_state(self, rel_x, rel_y):
         if self.state[rel_x][rel_y][0] == 0: # wall
-                return "stay"
+                return False
         elif self.state[rel_x][rel_y][0] == 1:
             if self.state[rel_x][rel_y][1] > 0: # fiya
-                return "stay"
-            else:
-                pass # do nothing if valid
+                return False
+        return True
 

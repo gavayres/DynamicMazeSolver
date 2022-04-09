@@ -20,6 +20,7 @@ class RandomAgent:
         w_left = self.weighting_scheme._distance(env.x-1, env.y)
         w_right = self.weighting_scheme._distance(env.x+1, env.y)
         w_stay = self.weighting_scheme._distance(env.x, env.y)
+        
         weights = [1/w_up, 1/w_down, 1/w_left, 1/w_right, 1/w_stay]
         return  [weight / np.sum(weights) for weight in weights] # normalise
 
