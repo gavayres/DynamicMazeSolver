@@ -1,13 +1,33 @@
 import logging
 import torch
+import wandb
 from read_maze import load_maze, get_local_maze_information
 from utils.env import Env
 from utils.reward import TimeReward
 from agents.random import RandomAgent
 from agents.dqn import DQNAgent
 from utils.replay_buffer import ReplayBuffer
+from evaluation.metrics import EpisodeLoss
 
 
+wandb.init(project="dynamic-maze-solver", entity="gavayres")
+
+
+"""
+TODO: Epsilon decay as a function of episode?
+TODO: Reward to be sum of time and negative mahalanobis distance?
+    this would promote:
+        reducing mahalanobis distance and reducing time
+        Consideration:
+            - don't want manhattan distance to dominate
+            - maybe use inverse manhattan distance?
+            - maybe give one big reward at end = -time
+TODO: Learning rate scheduler
+TODO: Batch training samples from replay buffer.
+TODO: Play one full run of epsiodes.
+TODO: Run on colab GPU. 
+
+"""
 EPISODES = 100
 BATCH_SIZE = 50
 # setup logger 
@@ -35,9 +55,11 @@ if __name__ == "__main__":
     env = Env()
     #agent = RandomAgent(env.actions)
     agent = DQNAgent((3,3,2),len(env.actions), 0.9, 0.003)
-    replay_buffer = ReplayBuffer(200)
+    replay_buffer = ReplayBuffer(500)
+    loss_dict = EpisodeLoss()
 
     for episode in range(EPISODES):
+        episode_loss=0
         env.reset()
         state_t = env.state
         # convert to tensor
@@ -63,15 +85,19 @@ if __name__ == "__main__":
                 )
             state_t = state_tp1.detach()
 
-
+            
             logging.debug("Agent action: %s", action)
             logging.debug(f"Position: %d, %d", env.x, env.y)
 
             if replay_buffer.ready(BATCH_SIZE):
-                print("Replaying epidoes. \n")
+                #print("Replaying episodes. \n")
                 # replay to update target network
                 batch = replay_buffer.sample(batch_size=BATCH_SIZE)
                 loss = agent.replay(batch)
+                episode_loss += loss
+
             if done:
                 print("Episode over. Updating target. \n")
+                print(f"Average episode loss: {episode_loss/(env.time+1)}\n")
+                loss_dict.write("loss", episode_loss/(env.time + 1))
                 agent.update_target()
