@@ -7,6 +7,10 @@ from utils.reward import TimeReward
 from agents.random import RandomAgent
 from agents.dqn import DQNAgent
 from utils.replay_buffer import ReplayBuffer
+<<<<<<< HEAD
+from utils.schedules import get_epsilon_decay_schedule
+=======
+>>>>>>> f01f90231cd67f92244f105f478f727ec7f10df1
 from evaluation.metrics import EpisodeLoss
 
 
@@ -15,9 +19,15 @@ wandb.init(project="dynamic-maze-solver", entity="gavayres")
 
 """
 TODO: Epsilon decay as a function of episode?
+<<<<<<< HEAD
+TODO: Reward to be sum of time and negative manhattan distance?
+    this would promote:
+        reducing manhattan distance and reducing time
+=======
 TODO: Reward to be sum of time and negative mahalanobis distance?
     this would promote:
         reducing mahalanobis distance and reducing time
+>>>>>>> f01f90231cd67f92244f105f478f727ec7f10df1
         Consideration:
             - don't want manhattan distance to dominate
             - maybe use inverse manhattan distance?
@@ -26,10 +36,20 @@ TODO: Learning rate scheduler
 TODO: Batch training samples from replay buffer.
 TODO: Play one full run of epsiodes.
 TODO: Run on colab GPU. 
+<<<<<<< HEAD
+TODO: Iron out evaluation metrics. Specifically, 
+    Time taken per episode. 
+
+"""
+EPISODES = 300
+BATCH_SIZE = 64
+BUFFER_SIZE=10000
+=======
 
 """
 EPISODES = 100
 BATCH_SIZE = 50
+>>>>>>> f01f90231cd67f92244f105f478f727ec7f10df1
 # setup logger 
 logging.basicConfig(filename='logs/run_logs.log', 
                     format='%(asctime)s %(message)s', 
@@ -50,6 +70,8 @@ tensorify = lambda np_array: torch.from_numpy(np_array)
 # reshape [BATCH, ROWS, COLS, CHANNELS] -> [BATCH, CHANNELS, ROWS, COLS]
 reshape = lambda tensor: torch.permute(tensor, (2, 0, 1))
 
+# epsilon schedule
+epsilon_schedule = get_epsilon_decay_schedule()
 
 if __name__ == "__main__":
     env = Env()
@@ -67,19 +89,20 @@ if __name__ == "__main__":
         # reshape for net input and add batch_size dimension
         state_t = reshape(state_t).double()
         done = False
+        agent.epsilon = epsilon_schedule(episode)
 
         # inner loop, play game and record results
         while not done:
             action_idx = agent.act(state_t.double())
             action = env.actions[action_idx]
             #action = agent.act(env) # just for random agent
-            state_tp1, done = env.update(action)
+            state_tp1, done, penalty = env.update(action)
             # convert to tensor
             state_tp1 = tensorify(state_tp1)
             # reshape
             state_tp1 = reshape(state_tp1)
 
-            reward = time_reward.reward(env)
+            reward = time_reward.reward(env) + penalty # penalise invalid actions
             replay_buffer.push(
                 (state_t, action_idx, state_tp1, reward, done)
                 )

@@ -12,14 +12,14 @@ class Env:
         """
         action is an integer index
         """
-        action = self._check_valid_action(action)
+        action, penalty = self._check_valid_action(action)
         # move agent according to chosen action
         self._move_agent(action)
         # increment time steps
         self.time += 1
         # update state information
         self.state = self._get_state()
-        return self.state, self._is_goal()
+        return self.state, self._is_goal(), penalty
 
     def reset(self):
         self.x=1
@@ -53,10 +53,10 @@ class Env:
             valid = self._check_state(rel_x-1, rel_y)
         elif action == "right":
             valid = self._check_state(rel_x+1, rel_y)
-        return action if valid else "stay" 
+        return (action, 0) if valid else ("stay", -1) 
 
     def _is_goal(self):
-        return (self.x == 199) & (self.y == 199)
+        return int((self.x == 199) & (self.y == 199))
 
     def _check_state(self, rel_x, rel_y):
         if self.state[rel_x][rel_y][0] == 0: # wall
