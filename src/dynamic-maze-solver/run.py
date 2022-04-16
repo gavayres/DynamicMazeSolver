@@ -7,10 +7,7 @@ from utils.reward import TimeReward
 from agents.random import RandomAgent
 from agents.dqn import DQNAgent
 from utils.replay_buffer import ReplayBuffer
-<<<<<<< HEAD
 from utils.schedules import get_epsilon_decay_schedule
-=======
->>>>>>> f01f90231cd67f92244f105f478f727ec7f10df1
 from evaluation.metrics import EpisodeLoss
 
 
@@ -19,15 +16,9 @@ wandb.init(project="dynamic-maze-solver", entity="gavayres")
 
 """
 TODO: Epsilon decay as a function of episode?
-<<<<<<< HEAD
 TODO: Reward to be sum of time and negative manhattan distance?
     this would promote:
         reducing manhattan distance and reducing time
-=======
-TODO: Reward to be sum of time and negative mahalanobis distance?
-    this would promote:
-        reducing mahalanobis distance and reducing time
->>>>>>> f01f90231cd67f92244f105f478f727ec7f10df1
         Consideration:
             - don't want manhattan distance to dominate
             - maybe use inverse manhattan distance?
@@ -36,7 +27,6 @@ TODO: Learning rate scheduler
 TODO: Batch training samples from replay buffer.
 TODO: Play one full run of epsiodes.
 TODO: Run on colab GPU. 
-<<<<<<< HEAD
 TODO: Iron out evaluation metrics. Specifically, 
     Time taken per episode. 
 
@@ -44,12 +34,6 @@ TODO: Iron out evaluation metrics. Specifically,
 EPISODES = 300
 BATCH_SIZE = 64
 BUFFER_SIZE=10000
-=======
-
-"""
-EPISODES = 100
-BATCH_SIZE = 50
->>>>>>> f01f90231cd67f92244f105f478f727ec7f10df1
 # setup logger 
 logging.basicConfig(filename='logs/run_logs.log', 
                     format='%(asctime)s %(message)s', 
