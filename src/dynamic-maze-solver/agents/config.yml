@@ -1,0 +1,3 @@
+DQN:
+  gamma: 0.99
+  learning_rate: 0.003

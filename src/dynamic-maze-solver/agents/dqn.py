@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import wandb
-from torch.nn import Sequential, Conv2d, Flatten, Linear, SmoothL1Loss, ReLU
+from torch.nn import Sequential, Conv2d, Flatten, Linear, SmoothL1Loss, LeakyReLU
 from torch.optim import Adam 
 
 
@@ -53,16 +53,20 @@ class DQNAgent:
     def _q_fn(self, input_size, output_size):
         """
         Neural network for approximating q function.
+        TODO: - how to initialise
+              - is this the best architecture?
+              - should this be the loss used, maybe MSE?
+              - how to initialise?
         """
         net = Sequential(
             Conv2d(2, 1,
             kernel_size=3,
             padding=1),
-            ReLU(),
+            LeakyReLU(),
             Flatten(),
-            Linear(input_size[0]*input_size[1], output_size),
-            ReLU(),
-            Linear(output_size, output_size)
+            Linear(input_size[0]*input_size[1], 32),
+            LeakyReLU(),
+            Linear(32, output_size)
         )
         return net
 
@@ -86,7 +90,6 @@ class DQNAgent:
         for param in self.q_fn.parameters():
             param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
-        wandb.log({"loss":loss.item()})
         return loss.item()
 
 

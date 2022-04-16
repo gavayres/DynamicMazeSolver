@@ -8,13 +8,13 @@ class RandomAgent:
         self.weighting_scheme = ManhattanReward((199, 199))
 
     def act(self, env):
-        weights = self.manhattan_weights(env)
+        weights = self._manhattan_weights(env)
         return np.random.choice(self.actions, p=weights)
 
     def remember(self, replay):
         pass
     
-    def manhattan_weights(self, env):
+    def _manhattan_weights(self, env):
         w_up = self.weighting_scheme._distance(env.x, env.y-1)
         w_down = self.weighting_scheme._distance(env.x, env.y+1)
         w_left = self.weighting_scheme._distance(env.x-1, env.y)
