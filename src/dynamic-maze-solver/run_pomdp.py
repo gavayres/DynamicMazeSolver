@@ -97,7 +97,8 @@ def run_loop(env,
             RewardClass,
             checkpoint_dir=None,
             evaluate=None,
-            update_target_interval=10
+            update_target_interval=10,
+            manhattan_exploration=False
             ):
     # return stats (as a dictionary?)
     # think about how to process stats
@@ -128,7 +129,10 @@ def run_loop(env,
             #------ uncomment -----# 
             logging.debug(f"Initial h shape{h.size()}\n")
             logging.debug(f"Initial c shape {c.size()}\n")
-            action_idx, h, c = agent.act(state_t.double(), h.double(), c.double())
+            if manhattan_exploration:
+                action_idx, h, c = agent.manhattan_act(state_t.double(), h.double(), c.double(), env.x, env.y)
+            else:
+                action_idx, h, c = agent.act(state_t.double(), h.double(), c.double())
             action = env.actions[action_idx]
             #------------------#
             state_tp1, done, penalty = env.update(action)
@@ -150,7 +154,7 @@ def run_loop(env,
 
 
             if replay_buffer.ready(replay_buffer.batch_size):
-                print("Replaying episodes. \n")
+                #print("Replaying episodes. \n")
                 # replay to update target network
                 batch, seq_len = replay_buffer.sample()
                 loss = agent.replay(batch, seq_len)
@@ -168,6 +172,7 @@ def run_loop(env,
             if done == 1:
                 print("Episode over. Updating target. \n")
                 print(f"Number of invalid actions: {num_invalid_actions}\n")
+                print(f"Agent location: x: {env.x}, y:{env.y}\n")
                 # update stats
                 stats["time"].append(env.time) # time taken to finish maze
                 stats["invalid_actions"].append(num_invalid_actions) # number of invalid actions taken
@@ -189,13 +194,13 @@ if __name__ == "__main__":
     wandb.watch(agent.target_q_fn)
     stats = run_loop(env=TestEnv(time_limit=10000),
                 #agent=RandomAgent(TestEnv(time_limit=10000).actions),
-                agent=DRQNAgent((3,3,2),5, config['DQN']['gamma'], config['DQN']['learning_rate']),
+                agent=agent,
                 replay_buffer=EpisodeMemory(
                     batch_size=2, 
                     max_epi_num=10, 
-                    max_seq_len=500,
+                    max_seq_len=700,
                     random_update=True, 
-                    lookup_size=250
+                    lookup_size=400
                     ), 
                 episodes=config['DQN']['episodes'],
                 batch_size=config['DQN']['batch_size'],
@@ -204,7 +209,8 @@ if __name__ == "__main__":
                 epsilon_decay_schedule=epsilon_schedule,
                 RewardClass=BasicReward(),
                 checkpoint_dir=checkpoint_dir,
-                evaluate=False)
+                evaluate=False,
+                manhattan_exploration=True)
     # save stats
     with open('./logs/stats.json', "w") as stats_file:
         json.dump(stats, stats_file)

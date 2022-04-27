@@ -57,10 +57,15 @@ class TimeReward(Reward):
         return - env.time
 
 class BasicReward:
+    """
+    TODO: Change to some positive reward for reducing manhattan 
+    distance and then a big one for finishing? 
+    - Maybe a potential function for manhattan distance?
+    """
     def reward(self, env):
         if (env._is_terminal()) & (env.timed_out == False):
-            return 40
+            return 10
         elif env.timed_out:
-            return -10
-        return -0.1  # expected reward of zero if manhattan shortest path taken?
+            return -1
+        return -0.01  # expected reward of zero if manhattan shortest path taken?
         
