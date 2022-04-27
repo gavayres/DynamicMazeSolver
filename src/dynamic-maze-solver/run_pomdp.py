@@ -5,12 +5,13 @@ import wandb
 import numpy as np
 import yaml
 import json
+from agents.drqn import DRQNAgent
 from read_maze import load_maze, get_local_maze_information
 from utils.env import TestEnv, Env
 from utils.reward import TimeReward, BasicReward
 from agents.random import RandomAgent
 from agents.dqn import DQNAgent
-from utils.buffers import ReplayBuffer
+from utils.buffers import ReplayBuffer, EpisodeBuffer, EpisodeMemory
 from utils.schedules import get_epsilon_decay_schedule
 from evaluation.metrics import EpisodeLoss
 
@@ -40,9 +41,6 @@ TODO: Iron out evaluation metrics. Specifically,
 TODO: How to decide when environment solved?
 TODO: When env solved call run_loop one more time
     BUT save path.
-
-TODO: Pull everything out of main and put into configurable
-    run_loop(). 
 
 TODO: Timeout
 TODO: Let agent move into fire but increment reward by how ling the fire remains 
@@ -98,7 +96,8 @@ def run_loop(env,
             epsilon_decay_schedule,
             RewardClass,
             checkpoint_dir=None,
-            evaluate=None
+            evaluate=None,
+            update_target_interval=10
             ):
     # return stats (as a dictionary?)
     # think about how to process stats
@@ -106,11 +105,15 @@ def run_loop(env,
     # or shortest path?
     stats = defaultdict(list)
     save_num = counter() # counter to record the number of saves
+    loss=0
 
     for episode in range(episodes):
         episode_loss=[]
         num_invalid_actions=0
         env.reset()
+        episode_record = EpisodeBuffer()
+        # initialise hidden state for lstm
+        h, c = agent.q_fn.init_hidden_state(batch_size=batch_size, training=False)
         state_t = env.state
         # convert to tensor
         state_t = tensorify(state_t)
@@ -122,13 +125,10 @@ def run_loop(env,
 
         # inner loop, play game and record results
         while not done:
-            #------ uncomment -----#
-            #action_idx = agent.act(state_t.double())
-            action_idx = agent.manhattan_act(state_t.double(), env.x, env.y)
-            #----------------------#
-            #action = agent.act(env) # TESTING: DELETE LATER
-            #action_idx=1 # TESTING: DELETE LATER
-            #--- uncomment -- #
+            #------ uncomment -----# 
+            logging.debug(f"Initial h shape{h.size()}\n")
+            logging.debug(f"Initial c shape {c.size()}\n")
+            action_idx, h, c = agent.act(state_t.double(), h.double(), c.double())
             action = env.actions[action_idx]
             #------------------#
             state_tp1, done, penalty = env.update(action)
@@ -138,18 +138,22 @@ def run_loop(env,
             state_tp1 = reshape(state_tp1)
 
             reward = RewardClass.reward(env) + penalty # penalise invalid actions
-            replay_buffer.push(
+            #TODO: Implement episode record
+            episode_record.push(
                 (state_t, action_idx, state_tp1, reward, done)
                 )
+            logging.debug(f"Size of episode record: {len(episode_record)}\n")
             state_t = state_tp1.detach()
             # record the number of invalid actions
             num_invalid_actions+=penalty
 
-            if replay_buffer.ready(batch_size):
-                #print("Replaying episodes. \n")
+
+
+            if replay_buffer.ready(replay_buffer.batch_size):
+                print("Replaying episodes. \n")
                 # replay to update target network
-                batch = replay_buffer.sample(batch_size=batch_size)
-                loss = agent.replay(batch)
+                batch, seq_len = replay_buffer.sample()
+                loss = agent.replay(batch, seq_len)
                 episode_loss.append(loss) # record loss 
                 if env.time % log_interval == 0:
                     wandb.log({"loss":loss})
@@ -157,7 +161,9 @@ def run_loop(env,
                     logging.debug(f"Position: %d, %d", env.x, env.y)
                 if env.time % save_interval == 0:
                     agent.save(checkpoint_dir, loss, next(save_num))
-
+                if (env.time +1) % update_target_interval == 0:
+                    # update target network
+                    agent.update_target()
 
             if done == 1:
                 print("Episode over. Updating target. \n")
@@ -167,9 +173,9 @@ def run_loop(env,
                 stats["invalid_actions"].append(num_invalid_actions) # number of invalid actions taken
                 stats["average_loss"].append(np.mean(episode_loss))
                 stats["std_loss"].append(np.std(episode_loss))
-                # update target network
-                agent.update_target()
                 agent.save(checkpoint_dir, loss, next(save_num))
+        logging.debug(f"Size of episode memory: {len(replay_buffer)}\n")
+        replay_buffer.push(episode_record)
     return stats
 
 
@@ -178,10 +184,19 @@ def run_loop(env,
 
 if __name__ == "__main__":
     checkpoint_dir = "./checkpoints"
+    agent = DRQNAgent((3,3,2),5, config['DQN']['gamma'], config['DQN']['learning_rate'])
+    wandb.watch(agent.q_fn)
+    wandb.watch(agent.target_q_fn)
     stats = run_loop(env=TestEnv(time_limit=10000),
                 #agent=RandomAgent(TestEnv(time_limit=10000).actions),
-                agent=DQNAgent((3,3,2),5, config['DQN']['gamma'], config['DQN']['learning_rate']),
-                replay_buffer=ReplayBuffer(config['DQN']['buffer_size']), 
+                agent=DRQNAgent((3,3,2),5, config['DQN']['gamma'], config['DQN']['learning_rate']),
+                replay_buffer=EpisodeMemory(
+                    batch_size=2, 
+                    max_epi_num=10, 
+                    max_seq_len=500,
+                    random_update=True, 
+                    lookup_size=250
+                    ), 
                 episodes=config['DQN']['episodes'],
                 batch_size=config['DQN']['batch_size'],
                 log_interval=config['DQN']['log_interval'],

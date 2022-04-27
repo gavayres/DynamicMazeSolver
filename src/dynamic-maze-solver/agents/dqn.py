@@ -1,8 +1,9 @@
 import numpy as np
 import torch
 import wandb
-from torch.nn import Sequential, Conv2d, Flatten, Linear, SmoothL1Loss, LeakyReLU
+from torch.nn import Sequential, Conv2d, Flatten, Linear, MSELoss, LeakyReLU
 from torch.optim import Adam 
+from utils.reward import manhattan_weights
 
 
 device = torch.device('cpu')
@@ -43,7 +44,7 @@ class DQNAgent:
         self.target_q_fn = self._q_fn(state_size, num_actions).to(device).double()
         self.discount = discount
         self.lr = learning_rate
-        self.loss = SmoothL1Loss()
+        self.loss = MSELoss()
         self.optimizer = Adam(self.q_fn.parameters(), lr=self.lr)
         self.epsilon = 1
         #self.epsilon_decay = 0.99
@@ -72,7 +73,7 @@ class DQNAgent:
 
     
     def update_target(self):
-        self.target_q_fn.load_state_dict(self.q_fun.state_dict())
+        self.target_q_fn.load_state_dict(self.q_fn.state_dict())
 
     def train(self, online_q_t, target_q):
         """
@@ -101,12 +102,12 @@ class DQNAgent:
         state_t, action_idx, state_tp1, reward, done =  batch_to_tensor(batch)
 
         # prediction from 'online' network, used for action selection
-        online_q_tp1 = - self.q_fn(state_tp1.double())
+        online_q_tp1 = self.q_fn(state_tp1.double())
         tp1_action = torch.argmax(online_q_tp1, dim=1).unsqueeze(1)
         # input to loss
-        online_q_t =  - self.q_fn(state_t.double()).gather(dim=1, index=action_idx)
+        online_q_t = self.q_fn(state_t.double()).gather(dim=1, index=action_idx)
         # prediction from target network
-        target_tp1 = - self.target_q_fn(state_tp1.double()).gather(dim=1, index=tp1_action)
+        target_tp1 = self.target_q_fn(state_tp1.double()).gather(dim=1, index=tp1_action)
         #mask = torch.zeros_like(online_pred_tp1)
         # boolean mask at column indices indicating action
         expected_q_t = reward + self.discount * (
@@ -152,4 +153,37 @@ class DQNAgent:
             return np.random.randint(0, 4)
         q_vals = self.q_fn(state)
         return torch.argmax(q_vals).item()
+
+    def manhattan_act(self, state, x, y):
+        # guided epsilon greedy exploration
+        goal = (199, 199)
+        if np.random.rand() <= self.epsilon:
+            weights = manhattan_weights(x, y, goal)
+            action = np.random.choice(list(range(5)), p=weights)
+            return action
+        q_vals = self.q_fn(state)
+        return torch.argmax(q_vals).item()
+
+    def save(self, checkpoint_dir, loss, epoch):
+        # save online network
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': self.q_fn.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'loss': loss,
+            }, checkpoint_dir + "/online.pt")
+        # save target network
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': self.q_fn.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'loss': loss,
+            }, checkpoint_dir + "/target.pt")
+
+    def load(self, checkpoint_dir):
+        online_checkpoint = torch.load(checkpoint_dir + "/online.pt")
+        self.q_fn.load_state_dict(online_checkpoint['model_state_dict'])
+        self.optimizer.load_state_dict(online_checkpoint['optimizer_state_dict'])
+        epoch = online_checkpoint['epoch']
+        loss = online_checkpoint['loss']
 

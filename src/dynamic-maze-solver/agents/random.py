@@ -6,12 +6,19 @@ class RandomAgent:
     def __init__(self, actions) -> None:
         self.actions = actions
         self.weighting_scheme = ManhattanReward((199, 199))
+        self.epsilon = None
 
     def act(self, env):
         weights = self._manhattan_weights(env)
         return np.random.choice(self.actions, p=weights)
 
-    def remember(self, replay):
+    def replay(self, batch):
+        return 0
+    
+    def update_target(self):
+        pass
+
+    def save(self, checkpoint_dir, loss, epoch):
         pass
     
     def _manhattan_weights(self, env):
