@@ -127,8 +127,8 @@ def run_loop(env,
         # inner loop, play game and record results
         while not done:
             #------ uncomment -----# 
-            logging.debug(f"Initial h shape{h.size()}\n")
-            logging.debug(f"Initial c shape {c.size()}\n")
+            #logging.debug(f"Initial h shape{h.size()}\n")
+            #logging.debug(f"Initial c shape {c.size()}\n")
             if manhattan_exploration:
                 action_idx, h, c = agent.manhattan_act(state_t.double(), h.double(), c.double(), env.x, env.y)
             else:
@@ -146,7 +146,7 @@ def run_loop(env,
             episode_record.push(
                 (state_t, action_idx, state_tp1, reward, done)
                 )
-            logging.debug(f"Size of episode record: {len(episode_record)}\n")
+            #logging.debug(f"Size of episode record: {len(episode_record)}\n")
             state_t = state_tp1.detach()
             # record the number of invalid actions
             num_invalid_actions+=penalty
@@ -192,15 +192,15 @@ if __name__ == "__main__":
     agent = DRQNAgent((3,3,2),5, config['DQN']['gamma'], config['DQN']['learning_rate'])
     wandb.watch(agent.q_fn)
     wandb.watch(agent.target_q_fn)
-    stats = run_loop(env=TestEnv(time_limit=10000),
+    stats = run_loop(env=TestEnv(time_limit=config['Env']['time_limit']),
                 #agent=RandomAgent(TestEnv(time_limit=10000).actions),
                 agent=agent,
                 replay_buffer=EpisodeMemory(
-                    batch_size=2, 
-                    max_epi_num=10, 
-                    max_seq_len=700,
-                    random_update=True, 
-                    lookup_size=400
+                    batch_size=config['EpisodeMemory']['batch_size'], 
+                    max_epi_num=config['EpisodeMemory']['max_epi_num'], 
+                    max_seq_len=config['EpisodeMemory']['max_seq_len'],
+                    random_update=config['EpisodeMemory']['random_update'], 
+                    lookup_size=config['EpisodeMemory']['lookup_size']
                     ), 
                 episodes=config['DQN']['episodes'],
                 batch_size=config['DQN']['batch_size'],
