@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import wandb
-from torch.nn import Sequential, Conv2d, Flatten, Linear, MSELoss, LeakyReLU
+from torch.nn import Sequential, Conv2d, Flatten, Linear, MSELoss, LeakyReLU, SmoothL1Loss
 from torch.optim import Adam 
 from utils.reward import manhattan_weights
 
@@ -44,7 +44,7 @@ class DQNAgent:
         self.target_q_fn = self._q_fn(state_size, num_actions).to(device).double()
         self.discount = discount
         self.lr = learning_rate
-        self.loss = MSELoss()
+        self.loss = SmoothL1Loss()#MSELoss()
         self.optimizer = Adam(self.q_fn.parameters(), lr=self.lr)
         self.epsilon = 1
         #self.epsilon_decay = 0.99

@@ -131,11 +131,12 @@ class DRQNAgent(DQNAgent):
         online_action_q_t = online_q_t.gather(dim=-1, index=actions) # take the q value which corresponded to the actions taken
         logging.debug(f"Online q shape: {online_q_t.size()}\n")
         # prediction from target network
-        target_tp1, _, _ = self.target_q_fn(
-            next_observations.double().to(self.device), 
-            h_target.double().to(self.device), 
-            c_target.double().to(self.device)
-            )
+        with torch.no_grad():
+            target_tp1, _, _ = self.target_q_fn(
+                next_observations.double().to(self.device), 
+                h_target.double().to(self.device), 
+                c_target.double().to(self.device)
+                )
         target_action_tp1 = target_tp1.gather(dim=-1, index=tp1_action).reshape(batch_size, seq_len, -1)
         logging.debug(f"Target tp1 shape: {target_tp1.size()}\n")
         logging.debug(f"Target action shape: {target_action_tp1.size()}\n")
@@ -154,11 +155,12 @@ class DRQNAgent(DQNAgent):
 
     def act(self, state, h, c):
         # for input to nn have to add BATCH_SIZE and SEQ_LEN dimensions
-        q_vals, h_new, c_new = self.q_fn(
-            state.unsqueeze(0).unsqueeze(0).to(self.device), 
-            h.double().to(self.device), 
-            c.double().to(self.device)
-            )
+        with torch.no_grad():
+            q_vals, h_new, c_new = self.q_fn(
+                state.unsqueeze(0).unsqueeze(0).to(self.device), 
+                h.double().to(self.device), 
+                c.double().to(self.device)
+                )
         logger.debug(f"q_vals shape: {q_vals.size()}\n")
         logger.debug(f"h shape {h_new.size()}\n")
         logger.debug(f"c shape: {c_new.size()}\n")
