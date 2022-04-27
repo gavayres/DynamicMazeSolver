@@ -59,6 +59,9 @@ class DRQNAgent(DQNAgent):
     def __init__(self, state_size, num_actions, discount, learning_rate, epsilon=1) -> None:
         super().__init__(state_size, num_actions, discount, learning_rate, epsilon)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # send models to device
+        self.q_fn.to(self.device)
+        self.target_q_fn.to(self.device)
         print('Using device:', self.device)
 
     def _q_fn(self, input_size, output_size, hidden_size=32):
@@ -117,35 +120,45 @@ class DRQNAgent(DQNAgent):
             c_online.double().to(self.device)
             )
         logging.debug(f"Online q tp1 shape: {online_q_tp1.size()}\n")
-        tp1_action = torch.argmax(online_q_tp1, dim=1).unsqueeze(1)
+        tp1_action = torch.argmax(online_q_tp1, dim=-1).unsqueeze(1)
         logging.debug(f"Tp1 action shape: {online_q_tp1.size()}\n")
         # input to loss
         online_q_t, _, _ = self.q_fn(
-            observations.double(), 
+            observations.double().to(self.device), 
             h_online.double().to(self.device), 
             c_online.double().to(self.device)
             )
-        online_action_q_t = online_q_t.gather(dim=1, index=actions) # take the q value which corresponded to the actions taken
+        online_action_q_t = online_q_t.gather(dim=-1, index=actions) # take the q value which corresponded to the actions taken
         logging.debug(f"Online q shape: {online_q_t.size()}\n")
         # prediction from target network
         target_tp1, _, _ = self.target_q_fn(
-            next_observations.double(), 
+            next_observations.double().to(self.device), 
             h_target.double().to(self.device), 
             c_target.double().to(self.device)
             )
-        target_action_tp1 = target_tp1.gather(dim=1, index=tp1_action)
+        target_action_tp1 = target_tp1.gather(dim=-1, index=tp1_action).reshape(batch_size, seq_len, -1)
         logging.debug(f"Target tp1 shape: {target_tp1.size()}\n")
+        logging.debug(f"Target action shape: {target_action_tp1.size()}\n")
+        logging.debug(f"Rewards shape: {rewards.shape}\n")
         #mask = torch.zeros_like(online_pred_tp1)
         # boolean mask at column indices indicating action
         expected_q_t = rewards + self.discount * (
             target_action_tp1*(1-dones))
+
+
+        #print(f"Online shape: {online_action_q_t.shape}\n")
+        #print(f"Expected q shape: {expected_q_t.shape}\n")
 
         loss = self.train(online_action_q_t, expected_q_t)
         return loss
 
     def act(self, state, h, c):
         # for input to nn have to add BATCH_SIZE and SEQ_LEN dimensions
-        q_vals, h_new, c_new = self.q_fn(state.unsqueeze(0).unsqueeze(0), h.double(), c.double())
+        q_vals, h_new, c_new = self.q_fn(
+            state.unsqueeze(0).unsqueeze(0).to(self.device), 
+            h.double().to(self.device), 
+            c.double().to(self.device)
+            )
         logger.debug(f"q_vals shape: {q_vals.size()}\n")
         logger.debug(f"h shape {h_new.size()}\n")
         logger.debug(f"c shape: {c_new.size()}\n")
@@ -161,13 +174,13 @@ class DRQNAgent(DQNAgent):
         goal = (199, 199)
         # for input to nn have to add BATCH_SIZE and SEQ_LEN dimensions
         q_vals, h_new, c_new = self.q_fn(
-            state.unsqueeze(0).unsqueeze(0), 
+            state.unsqueeze(0).unsqueeze(0).to(self.device), 
             h.double().to(self.device), 
             c.double().to(self.device)
             )
         if np.random.rand() <= self.epsilon:
             weights = manhattan_weights(x, y, goal)
             action = np.random.choice(list(range(5)), p=weights)
-            return action
+            return action, h_new, c_new
         return torch.argmax(q_vals).item(), h_new, c_new
 
