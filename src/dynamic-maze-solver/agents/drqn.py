@@ -4,6 +4,7 @@ import torch
 from torch.nn import Sequential, Conv2d, Flatten, Linear, MSELoss, LeakyReLU, LSTM, Module
 from torch.optim import Adam 
 from agents.dqn import DQNAgent
+from utils.reward import manhattan_weights
 import logging
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,8 @@ class DRQNAgent(DQNAgent):
     """
     def __init__(self, state_size, num_actions, discount, learning_rate, epsilon=1) -> None:
         super().__init__(state_size, num_actions, discount, learning_rate, epsilon)
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print('Using device:', self.device)
 
     def _q_fn(self, input_size, output_size, hidden_size=32):
         """
@@ -92,15 +95,13 @@ class DRQNAgent(DQNAgent):
         # should be [BATCH_SIZE, SEQ_LEN, FEATURE SIZE]
         logging.debug(f"Obs shape: {observations.shape}\n")
 
-        device='cpu'
-
         feature_size=(2,3,3)
 
-        observations = observations.reshape(batch_size,seq_len, *feature_size).double().to(device)
-        actions = actions.reshape(batch_size,seq_len,-1).to(device)
-        rewards = rewards.reshape(batch_size,seq_len,-1).double().to(device)
-        next_observations = next_observations.reshape(batch_size,seq_len, *feature_size).double().to(device)
-        dones = dones.reshape(batch_size,seq_len,-1).double().to(device)
+        observations = observations.reshape(batch_size,seq_len, *feature_size).double().to(self.device)
+        actions = actions.reshape(batch_size,seq_len,-1).to(self.device)
+        rewards = rewards.reshape(batch_size,seq_len,-1).double().to(self.device)
+        next_observations = next_observations.reshape(batch_size,seq_len, *feature_size).double().to(self.device)
+        dones = dones.reshape(batch_size,seq_len,-1).double().to(self.device)
 
         logging.debug(f"Tensor obs shape: {observations.shape}\n")
         #state_t, action_idx, state_tp1, reward, done =  batch_to_tensor(batch)
@@ -110,16 +111,28 @@ class DRQNAgent(DQNAgent):
 
 
         # prediction from 'online' network, used for action selection
-        online_q_tp1, _, _ = self.q_fn(next_observations.double(), h_online.double(), c_online.double())
+        online_q_tp1, _, _ = self.q_fn(
+            next_observations.double(), 
+            h_online.double().to(self.device), 
+            c_online.double().to(self.device)
+            )
         logging.debug(f"Online q tp1 shape: {online_q_tp1.size()}\n")
         tp1_action = torch.argmax(online_q_tp1, dim=1).unsqueeze(1)
         logging.debug(f"Tp1 action shape: {online_q_tp1.size()}\n")
         # input to loss
-        online_q_t, _, _ = self.q_fn(observations.double(), h_online.double(), c_online.double())
+        online_q_t, _, _ = self.q_fn(
+            observations.double(), 
+            h_online.double().to(self.device), 
+            c_online.double().to(self.device)
+            )
         online_action_q_t = online_q_t.gather(dim=1, index=actions) # take the q value which corresponded to the actions taken
         logging.debug(f"Online q shape: {online_q_t.size()}\n")
         # prediction from target network
-        target_tp1, _, _ = self.target_q_fn(next_observations.double(), h_target.double(), c_target.double())
+        target_tp1, _, _ = self.target_q_fn(
+            next_observations.double(), 
+            h_target.double().to(self.device), 
+            c_target.double().to(self.device)
+            )
         target_action_tp1 = target_tp1.gather(dim=1, index=tp1_action)
         logging.debug(f"Target tp1 shape: {target_tp1.size()}\n")
         #mask = torch.zeros_like(online_pred_tp1)
@@ -141,5 +154,20 @@ class DRQNAgent(DQNAgent):
             return np.random.randint(0, 4), h_new, c_new
         logger.debug(f"Agent action: {torch.argmax(q_vals).item()}\n")
         logger.debug(f"Agent q vals: {q_vals}\n")
+        return torch.argmax(q_vals).item(), h_new, c_new
+
+
+    def manhattan_act(self, state, h, c, x, y):
+        goal = (199, 199)
+        # for input to nn have to add BATCH_SIZE and SEQ_LEN dimensions
+        q_vals, h_new, c_new = self.q_fn(
+            state.unsqueeze(0).unsqueeze(0), 
+            h.double().to(self.device), 
+            c.double().to(self.device)
+            )
+        if np.random.rand() <= self.epsilon:
+            weights = manhattan_weights(x, y, goal)
+            action = np.random.choice(list(range(5)), p=weights)
+            return action
         return torch.argmax(q_vals).item(), h_new, c_new
 
