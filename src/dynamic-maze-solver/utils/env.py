@@ -10,6 +10,7 @@ class Env:
         self.actions = ['up', 'down', 'left', 'right', 'stay']
         self.timed_out = False
         self.time_limit = time_limit
+        self.goal = (199, 199)
 
     def update(self, action):
         """
@@ -79,11 +80,14 @@ class TestEnv:
     def __init__(self, time_limit):
         self.x = 1
         self.y = 1
+        self.old_x = 1
+        self.old_y = 1
         self.time = 0
         self.state = self._get_state()
         self.actions = ['up', 'down', 'left', 'right', 'stay']
         self.timed_out = False
         self.time_limit = time_limit
+        self.goal = (199, 199)
     
     def _get_state(self):
         state = super()._get_state()
@@ -95,6 +99,8 @@ class TestEnv:
         action is an integer index
         """
         action, penalty = self._check_valid_action(action)
+        old_x, old_y = self.x, self.y
+        self.old_x, self.old_y = old_x, old_y
         # move agent according to chosen action
         self._move_agent(action)
         # increment time steps
@@ -106,6 +112,8 @@ class TestEnv:
     def reset(self):
         self.x=1
         self.y=1
+        self.old_x=1
+        self.old_y=1
         self.time=0
         self.state = self._get_state()
 

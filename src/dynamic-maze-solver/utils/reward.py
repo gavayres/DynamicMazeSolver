@@ -67,5 +67,10 @@ class BasicReward:
             return 10
         elif env.timed_out:
             return -1
+        # give more negative reward for moving further from the goal
+        old_pos = (env.old_x, env.old_y)
+        curr_pos = (env.x, env.y)
+        if manhattan_distance(old_pos, env.goal) < manhattan_distance(curr_pos, env.goal):
+            return -0.02 # penalise moving further away from the goal
         return -0.01  # expected reward of zero if manhattan shortest path taken?
         
