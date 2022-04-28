@@ -9,6 +9,7 @@ DQN:
   save_interval: 120
 Env:
   time_limit: 50000
+  evaluate_interval: 3
 EpisodeMemory:
   batch_size: 1
   max_epi_num: 50

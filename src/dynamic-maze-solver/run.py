@@ -83,10 +83,35 @@ def counter():
         yield count
         count+=1
 
+def evaluate(env, agent, RewardClass):
+    env.reset()
+    state_t = env.state
+    state_t  =tensorify(state_t)
+    state_t = reshape(state_t).double()
+    done = False
+    agent.epsilon = 1e-2 # set to min epsilon
+    # run on maze
+    while not done:
+        action_idx = agent.act(state_t.double())
+        action = env.actions[action_idx]
+        state_tp1, done, penalty = env.update(action)
+        state_tp1 = tensorify(state_tp1)
+        state_tp1 = reshape(state_tp1)
+        reward = RewardClass.reward(env) + penalty
+        state_t = state_tp1.detach()
+        if done==1:
+            print(f"Time taken: {env.time}\n")
+            print(f"Agent position: {env.x}, {env.y}\n")
+            if env.timed_out == False:
+                return 1 # agent completed the maze!
+    return 0
+            
+
+
+
 """
 Run loop.
 Example of how it would look.
-
 """
 def run_loop(env, 
             agent, 
@@ -98,7 +123,8 @@ def run_loop(env,
             epsilon_decay_schedule,
             RewardClass,
             checkpoint_dir=None,
-            evaluate=None
+            evaluate=None,
+            evaluate_interval=3 # evaluate every three episodes
             ):
     # return stats (as a dictionary?)
     # think about how to process stats
@@ -106,6 +132,7 @@ def run_loop(env,
     # or shortest path?
     stats = defaultdict(list)
     save_num = counter() # counter to record the number of saves
+    total_success=0
 
     for episode in range(episodes):
         episode_loss=[]
@@ -123,8 +150,8 @@ def run_loop(env,
         # inner loop, play game and record results
         while not done:
             #------ uncomment -----#
-            #action_idx = agent.act(state_t.double())
-            action_idx = agent.manhattan_act(state_t.double(), env.x, env.y)
+            action_idx = agent.act(state_t.double())
+            #action_idx = agent.manhattan_act(state_t.double(), env.x, env.y)
             #----------------------#
             #action = agent.act(env) # TESTING: DELETE LATER
             #action_idx=1 # TESTING: DELETE LATER
@@ -170,6 +197,14 @@ def run_loop(env,
                 # update target network
                 agent.update_target()
                 agent.save(checkpoint_dir, loss, next(save_num))
+
+        if episode % evaluate_interval == 0:
+            success = evaluate(agent, RewardClass)
+            total_success += success
+            logging.debug(f"Number of times agent completed maze: {total_success}\n")
+            if total_success >= 3:
+                agent.save(checkpoint_dir, loss, next(save_num))
+                return stats # maze solved
     return stats
 
 
@@ -178,9 +213,12 @@ def run_loop(env,
 
 if __name__ == "__main__":
     checkpoint_dir = "./checkpoints"
-    stats = run_loop(env=TestEnv(time_limit=10000),
+    agent=DQNAgent((3,3,2),5, config['DQN']['gamma'], config['DQN']['learning_rate'])
+    wandb.watch(agent.q_fn)
+    wandb.watch(agent.target_q_fn)
+    stats = run_loop(env=TestEnv(time_limit=config['Env']['time_limit']),
                 #agent=RandomAgent(TestEnv(time_limit=10000).actions),
-                agent=DQNAgent((3,3,2),5, config['DQN']['gamma'], config['DQN']['learning_rate']),
+                agent=agent,
                 replay_buffer=ReplayBuffer(config['DQN']['buffer_size']), 
                 episodes=config['DQN']['episodes'],
                 batch_size=config['DQN']['batch_size'],
@@ -189,7 +227,8 @@ if __name__ == "__main__":
                 epsilon_decay_schedule=epsilon_schedule,
                 RewardClass=BasicReward(),
                 checkpoint_dir=checkpoint_dir,
-                evaluate=False)
+                evaluate=False,
+                evaluate_interval=config['Env']['evaluate_interval'])
     # save stats
     with open('./logs/stats.json', "w") as stats_file:
         json.dump(stats, stats_file)

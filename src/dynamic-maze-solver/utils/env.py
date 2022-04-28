@@ -30,6 +30,7 @@ class Env:
         self.y=1
         self.time=0
         self.state = self._get_state()
+        self.timed_out=False
 
     def _get_state(self):
         return get_local_maze_information(self.x, self.y)
@@ -90,7 +91,8 @@ class TestEnv:
         self.goal = (199, 199)
     
     def _get_state(self):
-        state = super()._get_state()
+        state = get_local_maze_information(self.x, self.y)
+        # zero out fire to make it easier for us
         state[:, :, 1] = np.zeros_like(state[:, :, 1])
         return state
 
@@ -115,10 +117,8 @@ class TestEnv:
         self.old_x=1
         self.old_y=1
         self.time=0
+        self.timed_out=False
         self.state = self._get_state()
-
-    def _get_state(self):
-        return get_local_maze_information(self.x, self.y)
 
     def _move_agent(self, action):
         if action == "up":

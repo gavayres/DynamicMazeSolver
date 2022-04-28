@@ -21,21 +21,21 @@ class DRQN(Module):
         self.out_linear = Linear(self.hidden_size, output_size)
 
     def forward(self, x, h, c):
-        logger.debug(f"Input x shape{x.size()}\n")
+        #logger.debug(f"Input x shape{x.size()}\n")
         # reshape x to [BATCH_SIZE*SEQ_LEN, CHANNELS, ROWS, COLS]
         batch_size, seq_len = x.size()[0], x.size()[1]
         x = x.reshape(1, batch_size*seq_len, x.size()[-3], x.size()[-2], x.size()[-1]).squeeze(0)
-        logger.debug(f"New x shape{x.size()}\n")
+        #logger.debug(f"New x shape{x.size()}\n")
         x = self.conv2d(x)
         x = self.flatten(self.relu(x))
         x = self.linear(x)
-        logger.debug(f"After conv, x shape{x.size()}\n")
+        #logger.debug(f"After conv, x shape{x.size()}\n")
         # reshape back to [BATCH_SIZE, SEQ_LEN, HIDDEN_SIZE]
         x = x.reshape(batch_size, seq_len, self.hidden_size)
-        logger.debug(f"Pre LSTM x shape{x.size()}\n")
+        #logger.debug(f"Pre LSTM x shape{x.size()}\n")
         x, (h_out, c_out) = self.lstm(x, (h, c))
         x = self.out_linear(x)
-        logger.debug(f"Output x shape{x.size()}\n")
+        #logger.debug(f"Output x shape{x.size()}\n")
         return x, h_out, c_out
 
     def init_hidden_state(self, batch_size, training=None):
@@ -87,8 +87,8 @@ class DRQNAgent(DQNAgent):
             next_observations.append(batch[i]["next_obs"])
             dones.append(batch[i]["done"])
 
-        logging.debug(f"obs type: {type(observations)}\n")
-        logging.debug(f"obs shape: {type(observations[0])}\n")
+        #logging.debug(f"obs type: {type(observations)}\n")
+        #logging.debug(f"obs shape: {type(observations[0])}\n")
         observations = torch.cat(observations, dim=0) #np.array(observations)
         actions = torch.cat(actions, dim=0)#np.array(actions)
         rewards = torch.cat(rewards, dim=0) #np.array(rewards)
@@ -96,7 +96,7 @@ class DRQNAgent(DQNAgent):
         dones = torch.cat(dones, dim=0) #np.array(dones)
 
         # should be [BATCH_SIZE, SEQ_LEN, FEATURE SIZE]
-        logging.debug(f"Obs shape: {observations.shape}\n")
+        #logging.debug(f"Obs shape: {observations.shape}\n")
 
         feature_size=(2,3,3)
 
@@ -106,7 +106,7 @@ class DRQNAgent(DQNAgent):
         next_observations = next_observations.reshape(batch_size,seq_len, *feature_size).double().to(self.device)
         dones = dones.reshape(batch_size,seq_len,-1).double().to(self.device)
 
-        logging.debug(f"Tensor obs shape: {observations.shape}\n")
+        #logging.debug(f"Tensor obs shape: {observations.shape}\n")
         #state_t, action_idx, state_tp1, reward, done =  batch_to_tensor(batch)
         # reset lstm hidden states for episode
         h_target, c_target = self.target_q_fn.init_hidden_state(batch_size=batch_size, training=True)
@@ -119,9 +119,9 @@ class DRQNAgent(DQNAgent):
             h_online.double().to(self.device), 
             c_online.double().to(self.device)
             )
-        logging.debug(f"Online q tp1 shape: {online_q_tp1.size()}\n")
+        #logging.debug(f"Online q tp1 shape: {online_q_tp1.size()}\n")
         tp1_action = torch.argmax(online_q_tp1, dim=-1).unsqueeze(1)
-        logging.debug(f"Tp1 action shape: {online_q_tp1.size()}\n")
+        #logging.debug(f"Tp1 action shape: {online_q_tp1.size()}\n")
         # input to loss
         online_q_t, _, _ = self.q_fn(
             observations.double().to(self.device), 
@@ -138,9 +138,9 @@ class DRQNAgent(DQNAgent):
                 c_target.double().to(self.device)
                 )
         target_action_tp1 = target_tp1.gather(dim=-1, index=tp1_action).reshape(batch_size, seq_len, -1)
-        logging.debug(f"Target tp1 shape: {target_tp1.size()}\n")
-        logging.debug(f"Target action shape: {target_action_tp1.size()}\n")
-        logging.debug(f"Rewards shape: {rewards.shape}\n")
+        #logging.debug(f"Target tp1 shape: {target_tp1.size()}\n")
+        #logging.debug(f"Target action shape: {target_action_tp1.size()}\n")
+        #logging.debug(f"Rewards shape: {rewards.shape}\n")
         #mask = torch.zeros_like(online_pred_tp1)
         # boolean mask at column indices indicating action
         expected_q_t = rewards + self.discount * (
@@ -161,14 +161,14 @@ class DRQNAgent(DQNAgent):
                 h.double().to(self.device), 
                 c.double().to(self.device)
                 )
-        logger.debug(f"q_vals shape: {q_vals.size()}\n")
-        logger.debug(f"h shape {h_new.size()}\n")
-        logger.debug(f"c shape: {c_new.size()}\n")
+        #logger.debug(f"q_vals shape: {q_vals.size()}\n")
+        #logger.debug(f"h shape {h_new.size()}\n")
+        #logger.debug(f"c shape: {c_new.size()}\n")
         # epsilon greedy exploration
         if np.random.rand() <= self.epsilon:
             return np.random.randint(0, 4), h_new, c_new
-        logger.debug(f"Agent action: {torch.argmax(q_vals).item()}\n")
-        logger.debug(f"Agent q vals: {q_vals}\n")
+        #logger.debug(f"Agent action: {torch.argmax(q_vals).item()}\n")
+        #logger.debug(f"Agent q vals: {q_vals}\n")
         return torch.argmax(q_vals).item(), h_new, c_new
 
 
