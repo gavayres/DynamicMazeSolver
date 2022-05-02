@@ -8,7 +8,7 @@ import json
 from agents.drqn import DRQNAgent
 from read_maze import load_maze, get_local_maze_information
 from utils.env import TestEnv, Env
-from utils.reward import TimeReward, BasicReward
+from utils.reward import TimeReward, BasicReward, ManhattanReward
 from agents.random import RandomAgent
 from agents.dqn import DQNAgent
 from utils.buffers import ReplayBuffer, EpisodeBuffer, EpisodeMemory
@@ -16,7 +16,7 @@ from utils.schedules import get_epsilon_decay_schedule
 from evaluation.metrics import EpisodeLoss
 
 
-wandb.init(project="dynamic-maze-solver", entity="gavayres")
+wandb.init(project="dynamic-maze-solver", entity="gavayres", mode="offline")
 # load config file
 with open("agents/config.yaml", "r") as f:
     config = yaml.safe_load(f)
@@ -45,6 +45,11 @@ TODO: When env solved call run_loop one more time
 TODO: Timeout
 TODO: Let agent move into fire but increment reward by how ling the fire remains 
     in the grid cell?
+
+TODO: Port over evalutation function from regular agent script 
+TODO: Add manhattan reward as default reward here
+TODO: Change function naming to be consistent with run.py
+
 
 
 
@@ -81,12 +86,42 @@ def counter():
         yield count
         count+=1
 
+""" Evaluate agent """
+def evaluate_loop(env, agent, RewardClass):
+    env.reset()
+    state_t = env.state
+    state_t  =tensorify(state_t)
+    state_t = reshape(state_t).double()
+    done = False
+    episode_reward=0
+    agent.epsilon = 1e-2 # set to min epsilon
+    # initialise hidden state for lstm
+    h, c = agent.q_fn.init_hidden_state(batch_size=1, training=False)
+    # run on maze
+    while not done:
+        action_idx, h, c = agent.act(state_t.double(), h.double(), c.double())
+        action = env.actions[action_idx]
+        state_tp1, done, penalty = env.update(action)
+        state_tp1 = tensorify(state_tp1)
+        state_tp1 = reshape(state_tp1)
+        reward = RewardClass.reward(env) + penalty
+        episode_reward+=reward
+        state_t = state_tp1.detach()
+        if done==1:
+            print(f"Time taken: {env.time}\n")
+            print(f"Agent position: {env.x}, {env.y}\n")
+            print(f"Total reward: {episode_reward}")
+            if env.timed_out == False:
+                return 1 # agent completed the maze!
+    return 0
+
+
 """
 Run loop.
 Example of how it would look.
 
 """
-def run_loop(env, 
+def train_loop(env, 
             agent, 
             replay_buffer, 
             episodes, 
@@ -98,7 +133,8 @@ def run_loop(env,
             checkpoint_dir=None,
             evaluate=None,
             update_target_interval=10,
-            manhattan_exploration=False
+            manhattan_exploration=False,
+            evaluate_interval=3
             ):
     # return stats (as a dictionary?)
     # think about how to process stats
@@ -107,10 +143,11 @@ def run_loop(env,
     stats = defaultdict(list)
     save_num = counter() # counter to record the number of saves
     loss=0
-
+    total_success=0
     for episode in range(episodes):
         episode_loss=[]
         num_invalid_actions=0
+        episode_reward=0
         env.reset()
         episode_record = EpisodeBuffer()
         # initialise hidden state for lstm
@@ -142,6 +179,8 @@ def run_loop(env,
             state_tp1 = reshape(state_tp1)
 
             reward = RewardClass.reward(env) + penalty # penalise invalid actions
+            # add to episode reward
+            episode_reward+=reward
             #TODO: Implement episode record
             episode_record.push(
                 (state_t, action_idx, state_tp1, reward, done)
@@ -171,14 +210,23 @@ def run_loop(env,
 
             if done == 1:
                 print("Episode over. Updating target. \n")
-                print(f"Number of invalid actions: {num_invalid_actions}\n")
+                print(f"Number of invalid actions: {num_invalid_actions*100}\n")
                 print(f"Agent location: x: {env.x}, y:{env.y}\n")
                 # update stats
                 stats["time"].append(env.time) # time taken to finish maze
-                stats["invalid_actions"].append(num_invalid_actions) # number of invalid actions taken
+                stats["invalid_actions"].append(num_invalid_actions*100) # number of invalid actions taken
                 stats["average_loss"].append(np.mean(episode_loss))
                 stats["std_loss"].append(np.std(episode_loss))
+                stats["reward"].append(episode_reward)
                 agent.save(checkpoint_dir, loss, next(save_num))
+
+            if episode % evaluate_interval == 0:
+                success = evaluate_loop(env, agent, RewardClass)
+                total_success += success
+                logging.debug(f"Number of times agent completed maze: {total_success}\n")
+                if total_success >= 3:
+                    agent.save(checkpoint_dir, loss, next(save_num))
+                    return stats # maze solved
         logging.debug(f"Size of episode memory: {len(replay_buffer)}\n")
         replay_buffer.push(episode_record)
     return stats
@@ -192,7 +240,7 @@ if __name__ == "__main__":
     agent = DRQNAgent((3,3,2),5, config['DQN']['gamma'], config['DQN']['learning_rate'])
     wandb.watch(agent.q_fn)
     wandb.watch(agent.target_q_fn)
-    stats = run_loop(env=TestEnv(time_limit=config['Env']['time_limit']),
+    stats = train_loop(env=TestEnv(time_limit=config['Env']['time_limit']),
                 #agent=RandomAgent(TestEnv(time_limit=10000).actions),
                 agent=agent,
                 replay_buffer=EpisodeMemory(
@@ -207,10 +255,11 @@ if __name__ == "__main__":
                 log_interval=config['DQN']['log_interval'],
                 save_interval=config['DQN']['save_interval'],
                 epsilon_decay_schedule=epsilon_schedule,
-                RewardClass=BasicReward(),
+                RewardClass=ManhattanReward((199,199)),
                 checkpoint_dir=checkpoint_dir,
                 evaluate=False,
-                manhattan_exploration=True)
+                manhattan_exploration=False,
+                evaluate_interval=config['Env']['evaluate_interval'])
     # save stats
     with open('./logs/stats.json', "w") as stats_file:
         json.dump(stats, stats_file)

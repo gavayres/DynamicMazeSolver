@@ -6,7 +6,7 @@ from torch.optim import Adam
 from utils.reward import manhattan_weights
 
 
-device = torch.device('cpu')
+#device = torch.device('cpu')
 
 """
 Helper function.
@@ -15,7 +15,7 @@ a tensor stacked by num_samples.
 So we can do mini-batch SGD as 
 opposed to regular SGD.
 """
-def batch_to_tensor(batch):
+def batch_to_tensor(batch, device):
     state_t_list = []
     action_list = []
     state_tp1_list = []
@@ -27,7 +27,7 @@ def batch_to_tensor(batch):
         state_tp1_list.append(state_tp1)
         reward_list.append(torch.tensor(reward))
         done_list.append(torch.tensor(done))
-    return torch.stack(state_t_list), torch.stack(action_list).unsqueeze(1), torch.stack(state_tp1_list), \
+    return torch.stack(state_t_list).to(device), torch.stack(action_list).unsqueeze(1), torch.stack(state_tp1_list).to(device), \
            torch.stack(reward_list).unsqueeze(1), torch.stack(done_list).unsqueeze(1)
 
 
@@ -40,8 +40,9 @@ class DQNAgent:
     learning_rate, 
     epsilon=1,
     ) -> None:
-        self.q_fn = self._q_fn(state_size, num_actions).to(device).double()
-        self.target_q_fn = self._q_fn(state_size, num_actions).to(device).double()
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.q_fn = self._q_fn(state_size, num_actions).to(self.device).double()
+        self.target_q_fn = self._q_fn(state_size, num_actions).to(self.device).double()
         self.discount = discount
         self.lr = learning_rate
         self.loss = SmoothL1Loss()#MSELoss()
@@ -99,7 +100,7 @@ class DQNAgent:
         TODO: GPU training
         """
 
-        state_t, action_idx, state_tp1, reward, done =  batch_to_tensor(batch)
+        state_t, action_idx, state_tp1, reward, done =  batch_to_tensor(batch, self.device)
 
         # prediction from 'online' network, used for action selection
         online_q_tp1 = self.q_fn(state_tp1.double())
@@ -107,7 +108,8 @@ class DQNAgent:
         # input to loss
         online_q_t = self.q_fn(state_t.double()).gather(dim=1, index=action_idx)
         # prediction from target network
-        target_tp1 = self.target_q_fn(state_tp1.double()).gather(dim=1, index=tp1_action)
+        with torch.no_grad():
+            target_tp1 = self.target_q_fn(state_tp1.double()).gather(dim=1, index=tp1_action)
         #mask = torch.zeros_like(online_pred_tp1)
         # boolean mask at column indices indicating action
         expected_q_t = reward + self.discount * (
@@ -151,7 +153,8 @@ class DQNAgent:
         # epsilon greedy exploration
         if np.random.rand() <= self.epsilon:
             return np.random.randint(0, 4)
-        q_vals = self.q_fn(state)
+        with torch.no_grad():
+            q_vals = self.q_fn(state.to(self.device))
         return torch.argmax(q_vals).item()
 
     def manhattan_act(self, state, x, y):
