@@ -8,10 +8,10 @@ DQN:
   log_interval: 120
   save_interval: 120
 Env:
-  time_limit: 50000
+  time_limit: 1000
   evaluate_interval: 3
 EpisodeMemory:
-  batch_size: 1
+  batch_size: 4
   max_epi_num: 50
   max_seq_len: 400
   random_update: False

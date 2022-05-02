@@ -143,7 +143,7 @@ class TestEnv:
             valid = self._check_state(rel_x-1, rel_y)
         elif action == "right":
             valid = self._check_state(rel_x+1, rel_y)
-        return (action, 0) if valid else ("stay", -1) 
+        return (action, 0) if valid else ("stay", -0.01) 
 
     def _is_terminal(self):
         if (self.x == 199) & (self.y == 199):

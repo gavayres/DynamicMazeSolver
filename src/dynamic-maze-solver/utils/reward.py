@@ -1,15 +1,6 @@
 import numpy as np
 
-
-class Reward:
-    def _distance(self, x, y):
-        pass
-
-    def reward(self, state):
-        return self._distance(state.x, state.y)
-
-
-class ManhattanReward(Reward):
+class ManhattanReward:
     def __init__(self, goal_pos) -> None:
         self.goal_pos = goal_pos
     
@@ -20,7 +11,18 @@ class ManhattanReward(Reward):
     def _distance(self, x, y):
         x_dist = abs(x - self.goal_pos[0])
         y_dist = abs(y - self.goal_pos[1])
-        return -(x_dist + y_dist)
+        return (x_dist + y_dist)
+
+    def reward(self, env):
+        """
+        Return Manhattan distance from 
+        goal state.
+        """
+        # Should work cos env updated before reward received
+        if env._is_terminal():
+            return - self._distance(env.x, env.y) / (199+199) # normalise by max distance
+        return 0
+
 
 def manhattan_distance(pos1, pos2):
     """
@@ -46,13 +48,14 @@ def manhattan_weights(x, y, goal):
     return  [weight / np.sum(weights) for weight in weights] # normalise
 
 
+
 """
 Give negative reward at every timestep.
 Agent should hopefully learn to minimise
 timesteps.
 TODO: Scale reward by max possible reward (the timeout number of timesteps)
 """
-class TimeReward(Reward):
+class TimeReward:
     def reward(self, env):
         return - env.time
 

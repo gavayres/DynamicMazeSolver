@@ -44,7 +44,7 @@ class DRQN(Module):
         If evaluating then batch size will be one because we are just 
         sequentially feeding in observations as the agent plays the game.
         """
-        assert training is not None, "training step parameter should be dtermined"
+        assert training is not None, "training step parameter should be determined"
 
         if training is True:
             return torch.zeros([1, batch_size, self.hidden_size]), torch.zeros([1, batch_size, self.hidden_size])
