@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 
 class ManhattanReward:
@@ -19,8 +20,12 @@ class ManhattanReward:
         goal state.
         """
         # Should work cos env updated before reward received
-        if env._is_terminal():
-            return - self._distance(env.x, env.y) / (199+199) # normalise by max distance
+        # normalise by max distance and add 1 so end reward
+        # is a larger scale than penalties
+        if env._is_terminal() & ((env.x, env.y) != self.goal_pos):
+            return - self._distance(env.x, env.y) / (199+199) 
+        elif ((env.x, env.y) == self.goal_pos):
+            return 10
         return 0
 
 
@@ -58,6 +63,20 @@ TODO: Scale reward by max possible reward (the timeout number of timesteps)
 class TimeReward:
     def reward(self, env):
         return - env.time
+
+class CheeseReward:
+    """
+    Agent gets small positive reward for
+    moving into unexplored cells.
+    """
+    def reward(self, env):
+        curr_pos = (env.x, env.y)
+        if env.path.count(curr_pos) > 1:
+            #logging.debug("Agent has already been here, no cheese\n")
+            return 0
+        #logging.debug(f"Agent has not been here, have some cheese: {-env.penalties.revisit}\n")
+        return -env.penalties.revisit
+
 
 class BasicReward:
     """

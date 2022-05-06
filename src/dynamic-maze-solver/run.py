@@ -7,7 +7,7 @@ import yaml
 import json
 from read_maze import load_maze, get_local_maze_information
 from utils.env import TestEnv, Env
-from utils.reward import TimeReward, BasicReward, ManhattanReward
+from utils.reward import CheeseReward, TimeReward, BasicReward, ManhattanReward
 from agents.random import RandomAgent
 from agents.dqn import DQNAgent
 from utils.buffers import ReplayBuffer
@@ -83,10 +83,51 @@ def counter():
         yield count
         count+=1
 
-def evaluate_loop(env, agent, RewardClass):
+def normalise_state(state):
+    """
+    Normalises state input by max possible values for fire channels
+    """
+    norm_state = state
+    norm_state[:, :, 1] = norm_state[:, :, 1] / 2 # max number of seconds fire can appear for
+    return norm_state
+
+def get_agent_history(agent_pos, agent_path):
+    x,y = agent_pos
+    # want to check if pos close to x,y 
+    # exist in list of tuples
+    agent_history = np.zeros((3,3))
+    in_path = lambda x, y: (x, y) in agent_path
+    agent_history[0, 0] = in_path(x-1, y+1)
+    agent_history[0, 1] = in_path(x, y+1)
+    agent_history[0, 2] = in_path(x+1, y+1)
+    agent_history[1, 0] = in_path(x-1, y)
+    agent_history[1, 1] = 0 # current location so obvs in path
+    agent_history[1, 2] = in_path(x+1, y)
+    agent_history[2, 0] = in_path(x-1, y-1)
+    agent_history[2,1] = in_path(x, y-1)
+    agent_history[2,2] = in_path(x+1, y+1)
+    return agent_history
+
+
+def add_state_memory(state, agent_pos, agent_path):
+    """
+    Add binary indicator to each location in observation
+    indicating if the agent has been to that location before.
+    """
+    # get array of indicators
+    history = np.expand_dims(get_agent_history(agent_pos, agent_path), -1)
+    new_state = np.concatenate((state, history), axis=-1)
+    return new_state
+
+
+
+def evaluate_loop(env, agent, RewardClass, state_memory=False):
     env.reset()
     state_t = env.state
-    state_t  =tensorify(state_t)
+    if state_memory:
+        # add new dimension indicating if agent has been in loc
+        state_t = add_state_memory(state_t, (env.x, env.y), env.path)
+    state_t = tensorify(state_t)
     state_t = reshape(state_t).double()
     done = False
     episode_reward=0
@@ -96,6 +137,9 @@ def evaluate_loop(env, agent, RewardClass):
         action_idx = agent.act(state_t.double())
         action = env.actions[action_idx]
         state_tp1, done, penalty = env.update(action)
+        if state_memory:
+            # add new dimension indicating if agent has been in loc
+            state_tp1 = add_state_memory(state_tp1, (env.x, env.y), env.path)
         state_tp1 = tensorify(state_tp1)
         state_tp1 = reshape(state_tp1)
         reward = RewardClass.reward(env) + penalty
@@ -127,7 +171,8 @@ def train_loop(env,
             RewardClass,
             checkpoint_dir=None,
             evaluate=None,
-            evaluate_interval=3 # evaluate every three episodes
+            evaluate_interval=3, # evaluate every three episodes
+            state_memory=False
             ):
     # return stats (as a dictionary?)
     # think about how to process stats
@@ -143,6 +188,10 @@ def train_loop(env,
         episode_reward=0
         env.reset()
         state_t = env.state
+        if state_memory:
+            # add new dimension indicating if agent has been in loc
+            state_t = add_state_memory(state_t, (env.x, env.y), env.path)
+        state_t = normalise_state(state_t) # NEW
         # convert to tensor
         state_t = tensorify(state_t)
         # reshape for net input and add batch_size dimension
@@ -163,6 +212,11 @@ def train_loop(env,
             action = env.actions[action_idx]
             #------------------#
             state_tp1, done, penalty = env.update(action)
+            if state_memory:
+                # add new dimension indicating if agent has been in loc
+                state_tp1 = add_state_memory(state_tp1, (env.x, env.y), env.path)
+
+            state_tp1 = normalise_state(state_tp1) # NEW
             # convert to tensor
             state_tp1 = tensorify(state_tp1)
             # reshape
@@ -206,11 +260,12 @@ def train_loop(env,
                 agent.save(checkpoint_dir, loss, next(save_num))
 
         if episode % evaluate_interval == 0:
-            success = evaluate_loop(env, agent, RewardClass)
+            success = evaluate_loop(env, agent, RewardClass, state_memory)
             total_success += success
             logging.debug(f"Number of times agent completed maze: {total_success}\n")
             if total_success >= 3:
                 agent.save(checkpoint_dir, loss, next(save_num))
+                stats["path"] = env.path
                 return stats # maze solved
     return stats
 
@@ -220,13 +275,15 @@ def train_loop(env,
 
 if __name__ == "__main__":
     checkpoint_dir = "./checkpoints"
-    agent=DQNAgent((3,3,2),5, config['DQN']['gamma'], config['DQN']['learning_rate'])
+    #agent=DQNAgent((3,3,2),5, config['DQN']['gamma'], config['DQN']['learning_rate'], no_conv=False)
+    agent=DQNAgent(27,5, config['DQN']['gamma'], config['DQN']['learning_rate'], no_conv=True)
     #agent=RandomAgent(TestEnv(time_limit=10000).actions)
-    wandb.watch(agent.q_fn)
-    wandb.watch(agent.target_q_fn)
+    wandb.watch(agent.q_fn, idx=1)
+    wandb.watch(agent.target_q_fn, idx=2)
     # Reward of Manhattan distance from goal state
-    RewardClass = ManhattanReward(goal_pos=(199,199))
+    #RewardClass = ManhattanReward(goal_pos=(199,199))
     #RewardClass = BasicReward()
+    RewardClass = CheeseReward()
 
     stats = train_loop(env=TestEnv(time_limit=config['Env']['time_limit']),
                 agent=agent,
@@ -239,7 +296,8 @@ if __name__ == "__main__":
                 RewardClass=RewardClass,
                 checkpoint_dir=checkpoint_dir,
                 evaluate=False,
-                evaluate_interval=config['Env']['evaluate_interval'])
+                evaluate_interval=config['Env']['evaluate_interval'],
+                state_memory=True)
     # save stats
     with open('./logs/stats.json', "w") as stats_file:
         json.dump(stats, stats_file)

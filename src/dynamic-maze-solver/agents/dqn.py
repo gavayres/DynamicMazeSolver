@@ -27,10 +27,15 @@ def batch_to_tensor(batch, device):
         state_tp1_list.append(state_tp1)
         reward_list.append(torch.tensor(reward))
         done_list.append(torch.tensor(done))
-    return torch.stack(state_t_list).to(device), torch.stack(action_list).unsqueeze(1), torch.stack(state_tp1_list).to(device), \
-           torch.stack(reward_list).unsqueeze(1), torch.stack(done_list).unsqueeze(1)
+    return torch.stack(state_t_list).to(device), \
+            torch.stack(action_list).unsqueeze(1).to(device), \
+            torch.stack(state_tp1_list).to(device), \
+           torch.stack(reward_list).unsqueeze(1).to(device), \
+           torch.stack(done_list).unsqueeze(1).to(device)
 
-
+"""
+TODO: Normalise state input.
+"""
 
 class DQNAgent:
     def __init__(self, 
@@ -39,37 +44,54 @@ class DQNAgent:
     discount, 
     learning_rate, 
     epsilon=1,
+    no_conv=False
     ) -> None:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.q_fn = self._q_fn(state_size, num_actions).to(self.device).double()
-        self.target_q_fn = self._q_fn(state_size, num_actions).to(self.device).double()
+        self.q_fn = self._q_fn(state_size, num_actions, no_conv=no_conv)
+        self.target_q_fn = self._q_fn(state_size, num_actions, no_conv=no_conv)
+        # send models to device
+        self.q_fn.to(self.device).double()
+        self.target_q_fn.to(self.device).double()
         self.discount = discount
         self.lr = learning_rate
         self.loss = SmoothL1Loss()#MSELoss()
         self.optimizer = Adam(self.q_fn.parameters(), lr=self.lr)
         self.epsilon = 1
+        self.no_conv = no_conv
         #self.epsilon_decay = 0.99
         #self.epsilon_min = 0.01
 
 
-    def _q_fn(self, input_size, output_size):
+    def _q_fn(self, input_size, output_size, no_conv=False):
         """
         Neural network for approximating q function.
         TODO: - how to initialise
               - is this the best architecture?
               - should this be the loss used, maybe MSE?
               - how to initialise?
+              - Option to NOT USE CONV and just flatten instead
         """
-        net = Sequential(
-            Conv2d(2, 1,
-            kernel_size=3,
-            padding=1),
-            LeakyReLU(),
-            Flatten(),
-            Linear(input_size[0]*input_size[1], 32),
-            LeakyReLU(),
-            Linear(32, output_size)
-        )
+        if no_conv:
+            net = Sequential(
+                Flatten(),
+                Linear(input_size, 32),
+                LeakyReLU(),
+                Flatten(),
+                Linear(32, 32),
+                LeakyReLU(),
+                Linear(32, output_size)
+            )
+        else:    
+            net = Sequential(
+                Conv2d(2, 1,
+                kernel_size=3,
+                padding=1),
+                LeakyReLU(),
+                Flatten(),
+                Linear(input_size[0]*input_size[1], 32),
+                LeakyReLU(),
+                Linear(32, output_size)
+            )
         return net
 
     
@@ -123,7 +145,7 @@ class DQNAgent:
         #                                                    torch.argmax(online_pred_tp1, dim=1)
         #                                                    ], ~done)
         # train network 
-        loss = self.train(online_q_t, expected_q_t)
+        loss = self.train(online_q_t.to(self.device), expected_q_t.to(self.device))
         # epsilon decay
         #if self.epsilon > self.epsilon_min:
         #    self.epsilon *= self.epsilon_decay
@@ -154,7 +176,11 @@ class DQNAgent:
         if np.random.rand() <= self.epsilon:
             return np.random.randint(0, 4)
         with torch.no_grad():
-            q_vals = self.q_fn(state.to(self.device))
+            q_vals = self.q_fn(
+                    state.to(self.device).unsqueeze(0)
+                    ) if self.no_conv else self.q_fn(
+                    state.to(self.device)
+                    )
         return torch.argmax(q_vals).item()
 
     def manhattan_act(self, state, x, y):
@@ -189,4 +215,5 @@ class DQNAgent:
         self.optimizer.load_state_dict(online_checkpoint['optimizer_state_dict'])
         epoch = online_checkpoint['epoch']
         loss = online_checkpoint['loss']
+
 
