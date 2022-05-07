@@ -129,7 +129,7 @@ class DRQNAgent(DQNAgent):
             c_online.double().to(self.device)
             )
         online_action_q_t = online_q_t.gather(dim=-1, index=actions) # take the q value which corresponded to the actions taken
-        logging.debug(f"Online q shape: {online_q_t.size()}\n")
+        #logging.debug(f"Online q shape: {online_q_t.size()}\n")
         # prediction from target network
         with torch.no_grad():
             target_tp1, _, _ = self.target_q_fn(

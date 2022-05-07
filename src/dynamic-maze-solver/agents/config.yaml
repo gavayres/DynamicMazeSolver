@@ -1,14 +1,14 @@
 DQN:
   gamma: 0.99
-  learning_rate: 0.001
+  learning_rate: 0.0003
   random_seed: 10
-  buffer_size: 10000
-  episodes: 1000
+  buffer_size: 1000
+  episodes: 100
   batch_size: 64
-  log_interval: 120
+  log_interval: 10
   save_interval: 120
 Env:
-  time_limit: 1000
+  time_limit: 10000
   evaluate_interval: 3
 EpisodeMemory:
   batch_size: 4

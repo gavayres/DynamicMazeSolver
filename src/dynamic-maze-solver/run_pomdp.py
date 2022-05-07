@@ -16,7 +16,7 @@ from utils.schedules import get_epsilon_decay_schedule
 from evaluation.metrics import EpisodeLoss
 
 
-wandb.init(project="dynamic-maze-solver", entity="gavayres", mode="offline")
+wandb.init(project="dynamic-maze-solver", entity="gavayres")
 # load config file
 with open("agents/config.yaml", "r") as f:
     config = yaml.safe_load(f)
@@ -49,6 +49,9 @@ TODO: Let agent move into fire but increment reward by how ling the fire remains
 TODO: Port over evalutation function from regular agent script 
 TODO: Add manhattan reward as default reward here
 TODO: Change function naming to be consistent with run.py
+
+TODO: Load agent if training stops. This should also periodically write stats file
+      and load the stats file to write to if load is specified.
 
 
 
