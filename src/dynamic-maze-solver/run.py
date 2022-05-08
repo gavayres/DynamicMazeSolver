@@ -60,6 +60,22 @@ TODO: How can we check what our agent is actually learning?
 
 NOTE: I WASNT NORMALISING TH EFFING STATE IN THE EVALUATION STEP!!!!
         NO WONDER MY FRIGGING AGENT NEVER WENT ANYWHERE FFS!!
+
+NOTE: How would an agent actually learn a good policy from 3by3 frames?
+    It would have to learn that it should move into a region with some cheese?
+    But cheese doesn't always lead to good long term reward....
+    suppose in two identical 3by3 grids, one with high expected future reward and one with low
+    How would an agent distinguish? Not possible.
+    Have to encode position somehow..?
+    Add x,y co-ordinate as input? 
+        - two extra dimensions?
+        - one for x co-ordinate
+        - one for y co-ordinate
+        Is this cheating in some sense?
+        - Would be difficult though to make any sense out of previously unobserved 
+        states
+NOTE:
+    Would there possibly be any better state representations?
 """
 EPISODES = 300
 BATCH_SIZE = 64
