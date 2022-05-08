@@ -48,8 +48,18 @@ TODO: Timeout
 TODO: Let agent move into fire but increment reward by how ling the fire remains 
     in the grid cell?
 
+TODO: Check that agent is predicting if has been in a cell before or not.
+TODO: What would an ideal policy do? It would follow the cheese and avoid the dead ends. 
+If we have an extra penalty for dead ends then how would an agent learn to relate that to a state?
+Add another indicator if one of the nearby grid cells is a dead end or not? 
+Input would then by [3, 3, 4] first two dims are wall, fire indicators, third is memory, fourth is dead end.
 
+TODO: Why is it that our loss converges to zero straight away?
 
+TODO: How can we check what our agent is actually learning?
+
+NOTE: I WASNT NORMALISING TH EFFING STATE IN THE EVALUATION STEP!!!!
+        NO WONDER MY FRIGGING AGENT NEVER WENT ANYWHERE FFS!!
 """
 EPISODES = 300
 BATCH_SIZE = 64
@@ -191,7 +201,7 @@ def train_loop(env,
         if state_memory:
             # add new dimension indicating if agent has been in loc
             state_t = add_state_memory(state_t, (env.x, env.y), env.path)
-        state_t = normalise_state(state_t) # NEW
+        #state_t = normalise_state(state_t) # NEW
         # convert to tensor
         state_t = tensorify(state_t)
         # reshape for net input and add batch_size dimension
@@ -216,7 +226,7 @@ def train_loop(env,
                 # add new dimension indicating if agent has been in loc
                 state_tp1 = add_state_memory(state_tp1, (env.x, env.y), env.path)
 
-            state_tp1 = normalise_state(state_tp1) # NEW
+            #state_tp1 = normalise_state(state_tp1) # NEW
             # convert to tensor
             state_tp1 = tensorify(state_tp1)
             # reshape
