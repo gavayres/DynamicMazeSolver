@@ -74,12 +74,12 @@ class DQNAgent:
         if no_conv:
             net = Sequential(
                 Flatten(),
-                Linear(input_size, 32),
+                Linear(input_size, 256),
                 LeakyReLU(),
                 Flatten(),
-                Linear(32, 32),
+                Linear(256, 256),
                 LeakyReLU(),
-                Linear(32, output_size)
+                Linear(256, output_size)
             )
         else:    
             net = Sequential(
