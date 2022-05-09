@@ -5,6 +5,7 @@ import wandb
 import numpy as np
 import yaml
 import json
+import argparse
 from read_maze import load_maze, get_local_maze_information
 from utils.env import TestEnv, Env
 from utils.reward import CheeseReward, TimeReward, BasicReward, ManhattanReward
@@ -14,6 +15,10 @@ from utils.buffers import ReplayBuffer
 from utils.schedules import get_epsilon_decay_schedule
 from evaluation.metrics import EpisodeLoss
 
+# set up argument parser
+parser = argparse.ArgumentParser()
+parser.add_argument('--load_path', type=str, default=None, help='Load an agent from the given checkpoint path.')
+args = parser.parse_args()
 
 wandb.init(project="dynamic-maze-solver", entity="gavayres")
 # load config file
@@ -76,6 +81,9 @@ NOTE: How would an agent actually learn a good policy from 3by3 frames?
         states
 NOTE:
     Would there possibly be any better state representations?
+
+NOTE: 
+    Should I remove staying as an option to the agent?
 """
 EPISODES = 300
 BATCH_SIZE = 64
@@ -101,13 +109,6 @@ reshape = lambda tensor: torch.permute(tensor, (2, 0, 1))
 
 # epsilon schedule
 epsilon_schedule = get_epsilon_decay_schedule()
-
-# counter
-def counter():
-    count=0
-    while True:
-        yield count
-        count+=1
 
 def normalise_state(state):
     """
@@ -196,19 +197,18 @@ def train_loop(env,
             epsilon_decay_schedule,
             RewardClass,
             checkpoint_dir=None,
-            evaluate=None,
+            start_episode=0,
             evaluate_interval=3, # evaluate every three episodes
+            stats=defaultdict(list),
             state_memory=False
             ):
     # return stats (as a dictionary?)
     # think about how to process stats
     # if 'evaluate' then return 'final path' of run.
     # or shortest path?
-    stats = defaultdict(list)
-    save_num = counter() # counter to record the number of saves
     total_success=0
 
-    for episode in range(episodes):
+    for episode in range(start_episode, episodes):
         episode_loss=[]
         num_invalid_actions=0
         episode_reward=0
@@ -269,7 +269,8 @@ def train_loop(env,
                     logging.debug("Agent action: %s", action)
                     logging.debug(f"Position: %d, %d", env.x, env.y)
                 if env.time % save_interval == 0:
-                    agent.save(checkpoint_dir, loss, next(save_num))
+                    agent.save(checkpoint_dir, loss, episode)
+                    
 
 
             if done == 1:
@@ -277,20 +278,20 @@ def train_loop(env,
                 print(f"Number of invalid actions: {num_invalid_actions}\n")
                 # update stats
                 stats["time"].append(env.time) # time taken to finish maze
-                stats["invalid_actions"].append(num_invalid_actions) # number of invalid actions taken
+                stats["total penalty"].append(num_invalid_actions) # sum of penalties incurred
                 stats["average_loss"].append(np.mean(episode_loss))
                 stats["std_loss"].append(np.std(episode_loss))
                 stats["reward"].append(episode_reward)
                 # update target network
                 agent.update_target()
-                agent.save(checkpoint_dir, loss, next(save_num))
+                agent.save(checkpoint_dir, loss, episode)
 
         if episode % evaluate_interval == 0:
             success = evaluate_loop(env, agent, RewardClass, state_memory)
             total_success += success
             logging.debug(f"Number of times agent completed maze: {total_success}\n")
             if total_success >= 3:
-                agent.save(checkpoint_dir, loss, next(save_num))
+                agent.save(checkpoint_dir, loss, episode)
                 stats["path"] = env.path
                 return stats # maze solved
     return stats
@@ -311,6 +312,13 @@ if __name__ == "__main__":
     #RewardClass = BasicReward()
     RewardClass = CheeseReward()
 
+    if args.load_path:
+        episode, stats = agent.load(args.load_path)
+    else:
+        #begin training at episode 0
+        episode=0
+        stats=defaultdict(list)
+
     stats = train_loop(env=TestEnv(time_limit=config['Env']['time_limit']),
                 agent=agent,
                 replay_buffer=ReplayBuffer(config['DQN']['buffer_size']), 
@@ -321,7 +329,7 @@ if __name__ == "__main__":
                 epsilon_decay_schedule=epsilon_schedule,
                 RewardClass=RewardClass,
                 checkpoint_dir=checkpoint_dir,
-                evaluate=False,
+                start_episode=0,
                 evaluate_interval=config['Env']['evaluate_interval'],
                 state_memory=True)
     # save stats
