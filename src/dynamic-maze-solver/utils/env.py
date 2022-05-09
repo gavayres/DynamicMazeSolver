@@ -30,6 +30,9 @@ class Env:
         # update state information
         self.state = self._get_state()
         # check if we are revisiting a state
+        # note, we move agent to the new x,y 
+        # check if it has been here before 
+        # and THEN add the current x,y to the path
         penalty += self._check_path(self.x, self.y)
         # add new position to path
         self.path.append((self.x, self.y))

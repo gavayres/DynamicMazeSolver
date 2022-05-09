@@ -269,7 +269,7 @@ def train_loop(env,
                     logging.debug("Agent action: %s", action)
                     logging.debug(f"Position: %d, %d", env.x, env.y)
                 if env.time % save_interval == 0:
-                    agent.save(checkpoint_dir, loss, episode)
+                    agent.save(checkpoint_dir, loss, episode, stats)
                     
 
 
@@ -284,14 +284,14 @@ def train_loop(env,
                 stats["reward"].append(episode_reward)
                 # update target network
                 agent.update_target()
-                agent.save(checkpoint_dir, loss, episode)
+                agent.save(checkpoint_dir, loss, episode, stats)
 
         if episode % evaluate_interval == 0:
             success = evaluate_loop(env, agent, RewardClass, state_memory)
             total_success += success
             logging.debug(f"Number of times agent completed maze: {total_success}\n")
             if total_success >= 3:
-                agent.save(checkpoint_dir, loss, episode)
+                agent.save(checkpoint_dir, loss, episode, stats)
                 stats["path"] = env.path
                 return stats # maze solved
     return stats
