@@ -222,7 +222,7 @@ class DQNAgent:
         # load target model
         target_checkpoint = torch.load(checkpoint_dir + "/target.pt")
         self.target_q_fn.load_state_dict(target_checkpoint['model_state_dict'])
-        episode = online_checkpoint['epoch']
+        episode = online_checkpoint['episode']
         loss = online_checkpoint['loss']
         # load stats
         try:
