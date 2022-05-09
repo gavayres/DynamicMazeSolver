@@ -1,4 +1,6 @@
+from collections import defaultdict
 import numpy as np
+import pickle
 import torch
 import wandb
 from torch.nn import Sequential, Conv2d, Flatten, Linear, MSELoss, LeakyReLU, SmoothL1Loss
@@ -193,27 +195,44 @@ class DQNAgent:
         q_vals = self.q_fn(state)
         return torch.argmax(q_vals).item()
 
-    def save(self, checkpoint_dir, loss, epoch):
+    def save(self, checkpoint_dir, loss, episode, stats):
         # save online network
         torch.save({
-            'epoch': epoch,
+            'episode': episode,
             'model_state_dict': self.q_fn.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'loss': loss,
             }, checkpoint_dir + "/online.pt")
         # save target network
         torch.save({
-            'epoch': epoch,
+            'episode': episode,
             'model_state_dict': self.q_fn.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'loss': loss,
             }, checkpoint_dir + "/target.pt")
+        # save training statistics to date
+        with open(checkpoint_dir + '/stats.p', 'wb') as f:
+            pickle.dump(stats, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     def load(self, checkpoint_dir):
+        # load online model
         online_checkpoint = torch.load(checkpoint_dir + "/online.pt")
         self.q_fn.load_state_dict(online_checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(online_checkpoint['optimizer_state_dict'])
-        epoch = online_checkpoint['epoch']
+        # load target model
+        target_checkpoint = torch.load(checkpoint_dir + "/target.pt")
+        self.target_q_fn.load_state_dict(target_checkpoint['model_state_dict'])
+        episode = online_checkpoint['epoch']
         loss = online_checkpoint['loss']
+        # load stats
+        try:
+            with open(checkpoint_dir + '/stats.p', 'rb') as f:
+                stats = pickle.load(f)
+        except FileNotFoundError:
+            print("No stats file exists, setting to empty dictionary.")
+            stats = defaultdict(list)
+        print(f"Loading agent last trained for {episode} episodes\n")
+        return episode, stats
+
 
 
