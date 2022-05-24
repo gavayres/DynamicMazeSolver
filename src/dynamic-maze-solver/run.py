@@ -29,6 +29,9 @@ with open("agents/config.yaml", "r") as f:
 np.random.RandomState(config['DQN']['random_seed'])
 
 """
+TODO: End episode at dead ends? Don't allow backtracking.
+    Maximising reward would then constitute finding the longest
+    straight line path.
 TODO: Epsilon decay as a function of episode?
 TODO: Reward to be sum of time and negative manhattan distance?
     this would promote:
