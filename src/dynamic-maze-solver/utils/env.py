@@ -1,15 +1,17 @@
 from collections import namedtuple
 from functools import reduce
+import logging
 import numpy as np
 from itertools import product
 from read_maze import get_local_maze_information
 
 PENALTIES = namedtuple('Penalties', 
-                       ['fire', 'wall', 'revisit'], 
-                       defaults=[-0.02, -0.04, -0.01])
+                       ['fire', 'wall', 'revisit', 'blocked'], 
+                       defaults=[-0.02, -0.04, -0.01, -1])
 
 class Env:
-    def __init__(self, time_limit):
+    def __init__(self, time_limit, fire=True, goal=(199,199)):
+        self.fire = fire
         self.x = 1
         self.y = 1
         self.time = 0
@@ -17,8 +19,9 @@ class Env:
         self.actions = ['up', 'down', 'left', 'right', 'stay']
         self.timed_out = False
         self.time_limit = time_limit
-        self.goal = (199, 199)
+        self.goal = goal
         self.penalties = PENALTIES()
+        self.blocked = False
 
     def update(self, action):
         """
@@ -49,7 +52,12 @@ class Env:
         self.path = [(self.x, self.y)]
 
     def _get_state(self):
-        return get_local_maze_information(self.x, self.y)
+        if self.fire:
+            return get_local_maze_information(self.x, self.y)
+        else: 
+            state = get_local_maze_information(self.x, self.y)
+            no_fire_state = state[:,:,0]
+            return np.expand_dims(no_fire_state, axis=-1)
 
     def _move_agent(self, action):
         if action == "up":
@@ -84,7 +92,8 @@ class Env:
         return (action, 0) if valid else ("stay", penalty) 
 
     def _is_terminal(self):
-        if (self.x == 199) & (self.y == 199):
+        if (self.x, self.y) == self.goal:
+            print("Maze solved!\n")
             return 1
         elif self.time >= self.time_limit:
             self.timed_out = True
@@ -92,17 +101,21 @@ class Env:
         return 0
 
     def _check_state(self, rel_x, rel_y):
-        if self.state[rel_x][rel_y][0] == 0: # wall
+        if self.state[rel_x, rel_y, 0] == 0: # wall
             return False, self.penalties.wall
-        elif self.state[rel_x][rel_y][0] == 1:
-            if self.state[rel_x][rel_y][1] > 0: # fiya
-                return False, self.penalties.fire
-        return True, 0
+        elif self.state[rel_x, rel_y, 0] == 1:
+            if self.fire:
+                if self.state[rel_x, rel_y, 1] > 0: # fiya
+                    return False, self.penalties.fire
+                else: 
+                    return True, 0
+            else:
+                return True, 0
 
 
 class TestEnv(Env):
-    def __init__(self, time_limit):
-        super().__init__(time_limit)
+    def __init__(self, time_limit, fire):
+        super().__init__(time_limit, fire)
 
     def _get_state(self):
         state = get_local_maze_information(self.x, self.y)
@@ -111,7 +124,7 @@ class TestEnv(Env):
         return state
 
 
-class KillBlockedIn(TestEnv):
+class KillBlockedIn(Env):
     """
     If agent gets 'blocked in' then restart.
     Also, restrict the agents available actions at each time step
@@ -125,8 +138,40 @@ class KillBlockedIn(TestEnv):
         separate method so
         check only if last three actions have been stays.
     """
-    def __init__(self, time_limit):
-        super().__init__(time_limit)
+    def __init__(self, time_limit, fire):
+        super().__init__(time_limit, fire)
+        self.blocked = False
+
+    def reset(self):
+        self.x=1
+        self.y=1
+        self.time=0
+        self.state = self._get_state()
+        self.timed_out=False
+        self.path = [(self.x, self.y)]
+        self.blocked = False
+
+    def update(self, action):
+        """
+        action is an integer index
+        """
+        action, penalty = self._check_valid_action(action)
+        # move agent according to chosen action
+        self._move_agent(action)
+        # increment time steps
+        self.time += 1
+        # update state information
+        self.state = self._get_state()
+        blocked = self._is_blocked()
+        # check if we are revisiting a state
+        # note, we move agent to the new x,y 
+        # check if it has been here before 
+        # and THEN add the current x,y to the path
+        penalty += self._check_path(self.x, self.y)
+        penalty += self.penalties.blocked if blocked else 0
+        # add new position to path
+        self.path.append((self.x, self.y))
+        return self.state, self._is_terminal(), penalty
 
     def _is_terminal(self):
         if (self.x == 199) & (self.y == 199):
@@ -134,33 +179,23 @@ class KillBlockedIn(TestEnv):
         elif self.time >= self.time_limit:
             self.timed_out = True
             return 1
-        elif self._is_blocked():
+        elif self.blocked:
+            print("I'm stuck!\n")
             return 1
-        return 0
+        else:
+            return 0
         
     def _is_blocked(self):
         """
-        Return true if only available agent action
-        revisits a state it has been at already.
-        TODO: Maybe need to override check_state function.
+        Return true if only available agent action is a revisit.
         """
         rel_x, rel_y = 1, 1 # relative position in state array
-
-        up_valid, _ = self._check_state(rel_x, rel_y-1)
-        down_valid, _ = self._check_state(rel_x, rel_y+1)
-        left_valid, _ = self._check_state(rel_x-1, rel_y)
-        right_valid, _ = self._check_state(rel_x+1, rel_y)
-        
-        # check if up,down,left,right are valid moves (no fire or wall)
-        #valids = [self._check_state(rel_x+x, rel_y +y) for x in [0,1] for y in [0,1]]
-        valids = [
-            (up_valid,(rel_x, rel_y-1)) , 
-            (down_valid, (rel_x, rel_y+1)), 
-            (left_valid,(rel_x-1, rel_y)),
-             (right_valid, (rel_x+1, rel_y))
-             ]
-        no_revisit_valids = [valid[0] & (self._check_path(valid[0][0], valid[0][1])==0) for valid in valids]
-        # if not blocked then only one needs to be true, so can reduce OR
-        # invert truth value to make variable names more intuitive with what we are doing
-        is_blocked = not reduce(lambda x,y: x|y, no_revisit_valids)
+        is_revisit = lambda x,y: int(self.path.count((x,y)))
+        is_wall = lambda x,y: int(self.state[x, y, 0] == 0)
+        wall_or_revisit = 0
+        for i in [-1, 1]:
+            wall_or_revisit+=int(is_wall(rel_x, rel_y+i) or is_revisit(rel_x, rel_y+i))
+            wall_or_revisit+=int(is_wall(rel_x+i, rel_y) or is_revisit(rel_x+i, rel_y))
+        is_blocked = wall_or_revisit == 4
+        self.blocked = is_blocked
         return is_blocked 

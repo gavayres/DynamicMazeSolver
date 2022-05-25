@@ -40,17 +40,19 @@ TODO: Normalise state input.
 """
 
 class DQNAgent:
-    def __init__(self, 
-    state_size, 
-    num_actions, 
+    def __init__(self,
     discount, 
     learning_rate, 
     epsilon=1,
-    no_conv=False
+    no_conv=False,
+    fire=True
     ) -> None:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.q_fn = self._q_fn(state_size, num_actions, no_conv=no_conv)
-        self.target_q_fn = self._q_fn(state_size, num_actions, no_conv=no_conv)
+        self.fire = fire
+        self.input_size = 27 if self.fire else 18
+        self.output_size = 5
+        self.q_fn = self._q_fn(self.input_size, self.output_size, no_conv=no_conv)
+        self.target_q_fn = self._q_fn(self.input_size, self.output_size, no_conv=no_conv)
         # send models to device
         self.q_fn.to(self.device).double()
         self.target_q_fn.to(self.device).double()
