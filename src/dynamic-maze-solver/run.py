@@ -7,7 +7,7 @@ import yaml
 import json
 import argparse
 from read_maze import load_maze, get_local_maze_information
-from utils.env import TestEnv, Env
+from utils.env import TestEnv, Env, KillBlockedIn
 from utils.reward import CheeseReward, TimeReward, BasicReward, ManhattanReward
 from agents.random import RandomAgent
 from agents.dqn import DQNAgent
@@ -126,7 +126,7 @@ def get_agent_history(agent_pos, agent_path):
     # want to check if pos close to x,y 
     # exist in list of tuples
     agent_history = np.zeros((3,3))
-    in_path = lambda x, y: (x, y) in agent_path
+    in_path = lambda x, y: agent_path.count((x,y)) > 0
     agent_history[0, 0] = in_path(x-1, y+1)
     agent_history[0, 1] = in_path(x, y+1)
     agent_history[0, 2] = in_path(x+1, y+1)
@@ -161,7 +161,7 @@ def evaluate_loop(env, agent, RewardClass, state_memory=False):
     state_t = reshape(state_t).double()
     done = False
     episode_reward=0
-    agent.epsilon = 1e-2 # set to min epsilon
+    agent.epsilon = 0#1e-2 # set to min epsilon
     # run on maze
     while not done:
         action_idx = agent.act(state_t.double())
@@ -179,9 +179,10 @@ def evaluate_loop(env, agent, RewardClass, state_memory=False):
             print(f"Time taken: {env.time}\n")
             print(f"Agent position: {env.x}, {env.y}\n")
             print(f"Total reward: {episode_reward}")
-            if env.timed_out == False:
+            if (env.timed_out == False) & (env.blocked == False):
                 return 1 # agent completed the maze!
-    return 0
+            else: 
+                return 0
             
 
 
@@ -213,6 +214,7 @@ def train_loop(env,
 
     for episode in range(start_episode, episodes):
         episode_loss=[]
+        loss=0
         num_invalid_actions=0
         episode_reward=0
         env.reset()
@@ -244,7 +246,6 @@ def train_loop(env,
             if state_memory:
                 # add new dimension indicating if agent has been in loc
                 state_tp1 = add_state_memory(state_tp1, (env.x, env.y), env.path)
-
             #state_tp1 = normalise_state(state_tp1) # NEW
             # convert to tensor
             state_tp1 = tensorify(state_tp1)
@@ -273,9 +274,6 @@ def train_loop(env,
                     logging.debug(f"Position: %d, %d", env.x, env.y)
                 if env.time % save_interval == 0:
                     agent.save(checkpoint_dir, loss, episode, stats)
-                    
-
-
             if done == 1:
                 print("Episode over. Updating target. \n")
                 print(f"Number of invalid actions: {num_invalid_actions}\n")
@@ -306,7 +304,7 @@ def train_loop(env,
 if __name__ == "__main__":
     checkpoint_dir = "./checkpoints"
     #agent=DQNAgent((3,3,2),5, config['DQN']['gamma'], config['DQN']['learning_rate'], no_conv=False)
-    agent=DQNAgent(27,5, config['DQN']['gamma'], config['DQN']['learning_rate'], no_conv=True)
+    agent=DQNAgent(config['DQN']['gamma'], config['DQN']['learning_rate'], no_conv=True, fire=False)
     #agent=RandomAgent(TestEnv(time_limit=10000).actions)
     wandb.watch(agent.q_fn, idx=1)
     wandb.watch(agent.target_q_fn, idx=2)
@@ -322,7 +320,7 @@ if __name__ == "__main__":
         episode=0
         stats=defaultdict(list)
 
-    stats = train_loop(env=TestEnv(time_limit=config['Env']['time_limit']),
+    stats = train_loop(env=Env(time_limit=config['Env']['time_limit'], fire=False, goal=(199,199)),
                 agent=agent,
                 replay_buffer=ReplayBuffer(config['DQN']['buffer_size']), 
                 episodes=config['DQN']['episodes'],
