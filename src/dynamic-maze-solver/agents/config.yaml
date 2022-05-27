@@ -2,9 +2,9 @@ DQN:
   gamma: 0.999
   learning_rate: 0.0003
   random_seed: 10
-  buffer_size: 1000
+  buffer_size: 10000
   episodes: 100
-  batch_size: 64
+  batch_size: 512
   log_interval: 10
   save_interval: 120
 Env:

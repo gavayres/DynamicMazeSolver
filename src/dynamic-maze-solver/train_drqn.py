@@ -8,12 +8,11 @@ import json
 from agents.drqn import DRQNAgent
 from read_maze import load_maze, get_local_maze_information
 from utils.env import TestEnv, Env
-from utils.reward import TimeReward, BasicReward, ManhattanReward
+from utils.reward import TimeReward, BasicReward, ManhattanReward, CheeseReward
 from agents.random import RandomAgent
 from agents.dqn import DQNAgent
 from utils.buffers import ReplayBuffer, EpisodeBuffer, EpisodeMemory
 from utils.schedules import get_epsilon_decay_schedule
-from evaluation.metrics import EpisodeLoss
 
 
 wandb.init(project="dynamic-maze-solver", entity="gavayres")
@@ -24,39 +23,6 @@ with open("agents/config.yaml", "r") as f:
 # set random seed
 np.random.RandomState(config['DQN']['random_seed'])
 
-"""
-TODO: Epsilon decay as a function of episode?
-TODO: Reward to be sum of time and negative manhattan distance?
-    this would promote:
-        reducing manhattan distance and reducing time
-        Consideration:
-            - don't want manhattan distance to dominate
-            - maybe use inverse manhattan distance?
-            - maybe give one big reward at end = -time
-TODO: Learning rate scheduler
-TODO: Play one full run of epsiodes.
-TODO: Run on colab GPU. 
-TODO: Iron out evaluation metrics. Specifically, 
-    Time taken per episode. 
-TODO: How to decide when environment solved?
-TODO: When env solved call run_loop one more time
-    BUT save path.
-
-TODO: Timeout
-TODO: Let agent move into fire but increment reward by how ling the fire remains 
-    in the grid cell?
-
-TODO: Port over evalutation function from regular agent script 
-TODO: Add manhattan reward as default reward here
-TODO: Change function naming to be consistent with run.py
-
-TODO: Load agent if training stops. This should also periodically write stats file
-      and load the stats file to write to if load is specified.
-
-
-
-
-"""
 EPISODES = 300
 BATCH_SIZE = 64
 BUFFER_SIZE=10000
@@ -89,15 +55,46 @@ def counter():
         yield count
         count+=1
 
+def get_agent_history(agent_pos, agent_path):
+    x,y = agent_pos
+    # want to check if pos close to x,y 
+    # exist in list of tuples
+    agent_history = np.zeros((3,3))
+    in_path = lambda x, y: agent_path.count((x,y)) > 0
+    agent_history[0, 0] = in_path(x-1, y+1)
+    agent_history[0, 1] = in_path(x, y+1)
+    agent_history[0, 2] = in_path(x+1, y+1)
+    agent_history[1, 0] = in_path(x-1, y)
+    agent_history[1, 1] = 0 # current location so obvs in path
+    agent_history[1, 2] = in_path(x+1, y)
+    agent_history[2, 0] = in_path(x-1, y-1)
+    agent_history[2,1] = in_path(x, y-1)
+    agent_history[2,2] = in_path(x+1, y+1)
+    return agent_history
+
+
+def add_state_memory(state, agent_pos, agent_path):
+    """
+    Add binary indicator to each location in observation
+    indicating if the agent has been to that location before.
+    """
+    # get array of indicators
+    history = np.expand_dims(get_agent_history(agent_pos, agent_path), -1)
+    new_state = np.concatenate((state, history), axis=-1)
+    return new_state
+
 """ Evaluate agent """
-def evaluate_loop(env, agent, RewardClass):
+def evaluate_loop(env, agent, RewardClass, state_memory):
     env.reset()
     state_t = env.state
+    if state_memory:
+            # add new dimension indicating if agent has been in loc
+            state_t = add_state_memory(state_t, (env.x, env.y), env.path)
     state_t  =tensorify(state_t)
     state_t = reshape(state_t).double()
     done = False
     episode_reward=0
-    agent.epsilon = 1e-2 # set to min epsilon
+    agent.epsilon = 0#1e-2 # set to min epsilon
     # initialise hidden state for lstm
     h, c = agent.q_fn.init_hidden_state(batch_size=1, training=False)
     # run on maze
@@ -105,6 +102,9 @@ def evaluate_loop(env, agent, RewardClass):
         action_idx, h, c = agent.act(state_t.double(), h.double(), c.double())
         action = env.actions[action_idx]
         state_tp1, done, penalty = env.update(action)
+        if state_memory:
+            # add new dimension indicating if agent has been in loc
+            state_tp1 = add_state_memory(state_tp1, (env.x, env.y), env.path)
         state_tp1 = tensorify(state_tp1)
         state_tp1 = reshape(state_tp1)
         reward = RewardClass.reward(env) + penalty
@@ -137,6 +137,7 @@ def train_loop(env,
             evaluate=None,
             update_target_interval=10,
             manhattan_exploration=False,
+            state_memory=False,
             evaluate_interval=3
             ):
     # return stats (as a dictionary?)
@@ -156,6 +157,9 @@ def train_loop(env,
         # initialise hidden state for lstm
         h, c = agent.q_fn.init_hidden_state(batch_size=batch_size, training=False)
         state_t = env.state
+        if state_memory:
+            # add new dimension indicating if agent has been in loc
+            state_t = add_state_memory(state_t, (env.x, env.y), env.path)
         # convert to tensor
         state_t = tensorify(state_t)
         # reshape for net input and add batch_size dimension
@@ -176,6 +180,9 @@ def train_loop(env,
             action = env.actions[action_idx]
             #------------------#
             state_tp1, done, penalty = env.update(action)
+            if state_memory:
+                # add new dimension indicating if agent has been in loc
+                state_tp1 = add_state_memory(state_tp1, (env.x, env.y), env.path)
             # convert to tensor
             state_tp1 = tensorify(state_tp1)
             # reshape
@@ -206,7 +213,7 @@ def train_loop(env,
                     logging.debug("Agent action: %s", action)
                     logging.debug(f"Position: %d, %d", env.x, env.y)
                 if env.time % save_interval == 0:
-                    agent.save(checkpoint_dir, loss, next(save_num))
+                    agent.save(checkpoint_dir, loss,  episode, stats)
                 if (env.time +1) % update_target_interval == 0:
                     # update target network
                     agent.update_target()
@@ -221,30 +228,27 @@ def train_loop(env,
                 stats["average_loss"].append(np.mean(episode_loss))
                 stats["std_loss"].append(np.std(episode_loss))
                 stats["reward"].append(episode_reward)
-                agent.save(checkpoint_dir, loss, next(save_num))
+                agent.save(checkpoint_dir, loss,  episode, stats)
 
             if episode % evaluate_interval == 0:
-                success = evaluate_loop(env, agent, RewardClass)
+                success = evaluate_loop(env, agent, RewardClass, state_memory)
                 total_success += success
                 logging.debug(f"Number of times agent completed maze: {total_success}\n")
                 if total_success >= 3:
-                    agent.save(checkpoint_dir, loss, next(save_num))
+                    agent.save(checkpoint_dir, loss,  episode, stats)
                     return stats # maze solved
         logging.debug(f"Size of episode memory: {len(replay_buffer)}\n")
         replay_buffer.push(episode_record)
     return stats
 
 
-
-
-
 if __name__ == "__main__":
-    checkpoint_dir = "./checkpoints"
-    agent = DRQNAgent((3,3,2),5, config['DQN']['gamma'], config['DQN']['learning_rate'])
+    checkpoint_dir = "./checkpoints/drqn"
+    agent = DRQNAgent(config['DQN']['gamma'], config['DQN']['learning_rate'], no_conv=True, fire=False)
+    RewardClass = CheeseReward()
     wandb.watch(agent.q_fn)
     wandb.watch(agent.target_q_fn)
-    stats = train_loop(env=TestEnv(time_limit=config['Env']['time_limit']),
-                #agent=RandomAgent(TestEnv(time_limit=10000).actions),
+    stats = train_loop(env=Env(time_limit=config['Env']['time_limit'], fire=False, goal=(5,5)),
                 agent=agent,
                 replay_buffer=EpisodeMemory(
                     batch_size=config['EpisodeMemory']['batch_size'], 
@@ -258,10 +262,11 @@ if __name__ == "__main__":
                 log_interval=config['DQN']['log_interval'],
                 save_interval=config['DQN']['save_interval'],
                 epsilon_decay_schedule=epsilon_schedule,
-                RewardClass=ManhattanReward((199,199)),
+                RewardClass=RewardClass,
                 checkpoint_dir=checkpoint_dir,
                 evaluate=False,
                 manhattan_exploration=False,
+                state_memory=True,
                 evaluate_interval=config['Env']['evaluate_interval'])
     # save stats
     with open('./logs/stats.json', "w") as stats_file:

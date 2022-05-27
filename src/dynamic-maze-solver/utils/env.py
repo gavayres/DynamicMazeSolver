@@ -2,15 +2,15 @@ from collections import namedtuple
 from functools import reduce
 import logging
 import numpy as np
-from itertools import product
+from utils.helpers import populate_landmarks
 from read_maze import get_local_maze_information
 
 PENALTIES = namedtuple('Penalties', 
-                       ['fire', 'wall', 'revisit', 'blocked'], 
-                       defaults=[-0.02, -0.04, -0.01, -1])
+                       ['fire', 'wall', 'revisit', 'stay', 'blocked', 'landmark'], 
+                       defaults=[-0.02, -0.04, -0.01, -0.02, -1, 0.04])
 
 class Env:
-    def __init__(self, time_limit, fire=True, goal=(199,199)):
+    def __init__(self, time_limit, maze, fire=True, goal=(199,199), landmark_step=5):
         self.fire = fire
         self.x = 1
         self.y = 1
@@ -22,6 +22,8 @@ class Env:
         self.goal = goal
         self.penalties = PENALTIES()
         self.blocked = False
+        self.landmarks = populate_landmarks(landmark_step, self.goal, maze)
+        self.path = [(self.x, self.y)]
 
     def update(self, action):
         """
@@ -74,7 +76,10 @@ class Env:
     def _check_path(self, x, y):
         if (x,y) in self.path:
             return self.penalties.revisit
-        return 0
+        elif (x,y) in self.landmarks:
+            return self.penalties.landmark
+        else:
+            return 0
 
     def _check_valid_action(self, action):
         rel_x, rel_y = 1, 1 # relative position in state array
@@ -89,7 +94,9 @@ class Env:
             valid, penalty = self._check_state(rel_x-1, rel_y)
         elif action == "right":
             valid, penalty = self._check_state(rel_x+1, rel_y)
-        return (action, 0) if valid else ("stay", penalty) 
+        elif action == "stay":
+            penalty = self.penalties.stay
+        return (action, penalty) if valid else ("stay", penalty) 
 
     def _is_terminal(self):
         if (self.x, self.y) == self.goal:
@@ -98,7 +105,8 @@ class Env:
         elif self.time >= self.time_limit:
             self.timed_out = True
             return 1
-        return 0
+        else:
+            return 0
 
     def _check_state(self, rel_x, rel_y):
         if self.state[rel_x, rel_y, 0] == 0: # wall
@@ -112,31 +120,11 @@ class Env:
             else:
                 return True, 0
 
-
-class TestEnv(Env):
-    def __init__(self, time_limit, fire):
-        super().__init__(time_limit, fire)
-
-    def _get_state(self):
-        state = get_local_maze_information(self.x, self.y)
-        # zero out fire to make it easier for us
-        state[:, :, 1] = np.zeros_like(state[:, :, 1])
-        return state
-
-
 class KillBlockedIn(Env):
     """
     If agent gets 'blocked in' then restart.
     Also, restrict the agents available actions at each time step
     so that they are not allowed to backtrack. 
-    TODO: When moving agent position treat agent positions
-        which are already in the path as a 'wall' with 0 penalty.
-    TODO: How do we account for removing staying as a valid action?
-        Do we need an alternative action data structure?
-    TODO: What does 'blocked in' mean? Only available action is a revisit?
-        So need to check the up, down, left, right directions
-        separate method so
-        check only if last three actions have been stays.
     """
     def __init__(self, time_limit, fire):
         super().__init__(time_limit, fire)
