@@ -73,7 +73,7 @@ def evaluate_loop(env, agent, RewardClass, state_memory=False, compass=False, ve
     state_t = reshape(state_t).double()
     done = False
     episode_reward=0
-    agent.epsilon = 0
+    agent.epsilon = 0.02
     # run on maze
     while not done:
         action_idx = agent.act(state_t.double())
@@ -137,7 +137,7 @@ def train_loop(env,
         env.reset()
         state_t = env.state
         if state_memory:
-            # add new dimension indicating if agent has been in loc
+            # add new dimension indicating if agent has been in location
             state_t = add_state_memory(state_t, (env.x, env.y), env.path, env.landmarks)
         if compass:
             state_t = add_agent_position(state_t, (env.x, env.y))

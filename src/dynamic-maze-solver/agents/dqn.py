@@ -38,8 +38,7 @@ Agent implements Double Q Learning.
 class DQNAgent:
     def __init__(self,
     discount, 
-    learning_rate, 
-    epsilon=1,
+    learning_rate,
     no_conv=False,
     fire=True
     ) -> None:
