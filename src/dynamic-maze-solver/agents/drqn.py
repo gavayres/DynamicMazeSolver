@@ -10,13 +10,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 class DRQN(Module):
-    def __init__(self, input_size, output_size, hidden_size=32) -> None:
+    def __init__(self, input_size, output_size, hidden_size=256, no_conv=True) -> None:
         super().__init__()
         self.hidden_size = hidden_size
-        self.conv2d = Conv2d(2, 1, kernel_size=3, padding=1)
-        self.relu = LeakyReLU()
+        self.no_conv=no_conv
+        if self.no_conv:
+            self.linear = Linear(input_size, self.hidden_size)
+        else:
+            self.conv2d = Conv2d(2, 1, kernel_size=3, padding=1)
+            self.linear = Linear(input_size[0]*input_size[1], self.hidden_size)
         self.flatten = Flatten()
-        self.linear = Linear(input_size[0]*input_size[1], self.hidden_size)
+        self.relu = LeakyReLU()
         self.lstm = LSTM(hidden_size, self.hidden_size, batch_first=True)
         self.out_linear = Linear(self.hidden_size, output_size)
 
@@ -24,11 +28,17 @@ class DRQN(Module):
         #logger.debug(f"Input x shape{x.size()}\n")
         # reshape x to [BATCH_SIZE*SEQ_LEN, CHANNELS, ROWS, COLS]
         batch_size, seq_len = x.size()[0], x.size()[1]
+        #print(x.size())
         x = x.reshape(1, batch_size*seq_len, x.size()[-3], x.size()[-2], x.size()[-1]).squeeze(0)
         #logger.debug(f"New x shape{x.size()}\n")
-        x = self.conv2d(x)
-        x = self.flatten(self.relu(x))
-        x = self.linear(x)
+        if self.no_conv == False:
+            x = self.conv2d(x)
+            x = self.flatten(self.relu(x))
+            x = self.linear(x)
+        else:
+            x = self.flatten(x)
+            x = self.linear(x)
+            x = self.relu(x)
         #logger.debug(f"After conv, x shape{x.size()}\n")
         # reshape back to [BATCH_SIZE, SEQ_LEN, HIDDEN_SIZE]
         x = x.reshape(batch_size, seq_len, self.hidden_size)
@@ -56,20 +66,20 @@ class DRQNAgent(DQNAgent):
     """
     Deep recurrent q network agent.
     """
-    def __init__(self, state_size, num_actions, discount, learning_rate, epsilon=1) -> None:
-        super().__init__(state_size, num_actions, discount, learning_rate, epsilon)
+    def __init__(self, discount, learning_rate, epsilon=1, no_conv=True, fire=True) -> None:
+        super().__init__(discount, learning_rate, epsilon, no_conv=no_conv, fire=fire)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         # send models to device
         self.q_fn.to(self.device)
         self.target_q_fn.to(self.device)
         print('Using device:', self.device)
 
-    def _q_fn(self, input_size, output_size, hidden_size=32):
+    def _q_fn(self, input_size, output_size, no_conv=True):
         """
         Regular Q but with an lstm as the LAST layer to process 
         sequences.
         """
-        net = DRQN(input_size=input_size, output_size=output_size, hidden_size=hidden_size)
+        net = DRQN(input_size=input_size, output_size=output_size, hidden_size=32, no_conv=no_conv)
         return net
 
     def replay(self, batch, seq_len):

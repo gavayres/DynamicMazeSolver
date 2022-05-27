@@ -3,12 +3,9 @@ import numpy as np
 import pickle
 import torch
 import wandb
-from torch.nn import Sequential, Conv2d, Flatten, Linear, MSELoss, LeakyReLU, SmoothL1Loss
+from torch.nn import Sequential, Conv2d, Flatten, Linear, LeakyReLU, SmoothL1Loss
 from torch.optim import Adam 
 from utils.reward import manhattan_weights
-
-
-#device = torch.device('cpu')
 
 """
 Helper function.
@@ -36,9 +33,8 @@ def batch_to_tensor(batch, device):
            torch.stack(done_list).unsqueeze(1).to(device)
 
 """
-TODO: Normalise state input.
+Agent implements Double Q Learning.
 """
-
 class DQNAgent:
     def __init__(self,
     discount, 
@@ -58,22 +54,15 @@ class DQNAgent:
         self.target_q_fn.to(self.device).double()
         self.discount = discount
         self.lr = learning_rate
-        self.loss = SmoothL1Loss()#MSELoss()
+        self.loss = SmoothL1Loss()
         self.optimizer = Adam(self.q_fn.parameters(), lr=self.lr)
         self.epsilon = 1
         self.no_conv = no_conv
-        #self.epsilon_decay = 0.99
-        #self.epsilon_min = 0.01
 
 
     def _q_fn(self, input_size, output_size, no_conv=False):
         """
         Neural network for approximating q function.
-        TODO: - how to initialise
-              - is this the best architecture?
-              - should this be the loss used, maybe MSE?
-              - how to initialise?
-              - Option to NOT USE CONV and just flatten instead
         """
         if no_conv:
             net = Sequential(
@@ -104,13 +93,8 @@ class DQNAgent:
 
     def train(self, online_q_t, target_q):
         """
-        TODO: Evaluation metrics.
+        Train agent given predictions from online and target networks.
         """
-        # preprocess input
-        #preprocess(state_t)
-        # Compute Huber loss
-        # take negative of prediction! Hopefully this helps convergence
-
         loss = self.loss(online_q_t, target_q)
         # Optimize the model
         self.optimizer.zero_grad()
@@ -123,9 +107,8 @@ class DQNAgent:
 
     def replay(self, batch):
         """
-        TODO: GPU training
+        Sample experience from replay buffer and train agent.
         """
-
         state_t, action_idx, state_tp1, reward, done =  batch_to_tensor(batch, self.device)
 
         # prediction from 'online' network, used for action selection
@@ -136,45 +119,12 @@ class DQNAgent:
         # prediction from target network
         with torch.no_grad():
             target_tp1 = self.target_q_fn(state_tp1.double()).gather(dim=1, index=tp1_action)
-        #mask = torch.zeros_like(online_pred_tp1)
-        # boolean mask at column indices indicating action
         expected_q_t = reward + self.discount * (
             target_tp1*(1-done))
-
-
-
-        #mask.index_fill_(1, action_idx, 1)
-        #print(online_pred_tp1[mask.bool()].shape)
-        #online_pred_tp1[mask.bool()]  = reward + self.discount * torch.masked_select(target_tp1[:, 
-        #                                                    torch.argmax(online_pred_tp1, dim=1)
-        #                                                    ], ~done)
         # train network 
         loss = self.train(online_q_t.to(self.device), expected_q_t.to(self.device))
-        # epsilon decay
-        #if self.epsilon > self.epsilon_min:
-        #    self.epsilon *= self.epsilon_decay
-
         return loss
         
-        """
-        # Double q learning
-        batch_loss = []
-        for state_t, action_idx, state_tp1, reward, done in batch:
-            # prediction from 'online' network
-            online_pred_tp1 = - self.q_fn(state_tp1.double())
-            # prediction from target network
-            target_tp1 = - self.target_q_fn(state_tp1.double())
-            online_pred_tp1[:, action_idx] = reward + self.discount * target_tp1[:, 
-                                                            torch.argmax(online_pred_tp1)
-                                                            ].item()*(1-done)
-            # train network 
-            loss = self.train(state_t, online_pred_tp1)
-            batch_loss.append(loss)
-        # epsilon decay at the end of replay
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
-        return np.mean(batch_loss)
-        """
     def act(self, state):
         # epsilon greedy exploration
         if np.random.rand() <= self.epsilon:
@@ -188,7 +138,10 @@ class DQNAgent:
         return torch.argmax(q_vals).item()
 
     def manhattan_act(self, state, x, y):
-        # guided epsilon greedy exploration
+        """ 
+        Guided epsilon greedy exploration using Manhattan distance 
+        from goal state.
+        """
         goal = (199, 199)
         if np.random.rand() <= self.epsilon:
             weights = manhattan_weights(x, y, goal)

@@ -2,7 +2,11 @@
 def power_decay_schedule(episode_number: int,
                          decay_factor: float,
                          minimum_epsilon: float) -> float:
-    """Power decay schedule found in other practical applications."""
+    """
+    Power decay schedule found in other practical applications.
+    Adapted from 
+    https://github.com/davidrpugh/stochastic-expatriate-descent/blob/2020-04-03-deep-q-networks/_notebooks/2020-04-03-deep-q-networks.ipynb
+    """
     return max(decay_factor**episode_number, minimum_epsilon)
 
 def get_epsilon_decay_schedule():
